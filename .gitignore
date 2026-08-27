@@ -1,0 +1,49 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# Рабочие данные, а не код: боевая база живёт в PostgreSQL,
+# а этот файл остался снимком до переезда.
+/database/*.sqlite
+
+# Загруженные фотографии товаров и логотипы марок
+/storage/app/public/products
+/storage/app/public/brands
+
+# Временные файлы: сюда переехал системный TEMP, чтобы не забивать диск C:
+/storage/tmp
+
+# Ассеты Filament — их пересобирает `php artisan filament:assets`
+# на каждом composer install, держать их копию в истории незачем.
+/public/css/filament
+/public/js/filament
+/public/fonts/filament
+
+# Старый лендинг avto-glass.kz: держим на диске как справку по контактам
+# и текстам, но в историю проекта не тащим — это 11 МБ чужой статики,
+# которую из git потом уже не убрать.
+/old-lp

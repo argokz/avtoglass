@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+/*
+ * Токены семантические, а не «цвет по имени цвета»: в разметке стоит bg-surface,
+ * а не bg-white. Благодаря этому тёмная тема ниже переопределяет одни переменные
+ * и не требует ни одного dark:-класса в шаблонах.
+ */
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Manrope', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+    /* поверхности */
+    --color-canvas: oklch(98.4% 0.003 250);
+    --color-surface: oklch(100% 0 0);
+    --color-sunken: oklch(96.2% 0.006 250);
+    --color-line: oklch(91% 0.008 250);
+    --color-line-strong: oklch(84% 0.012 250);
+
+    /* текст */
+    --color-ink: oklch(21% 0.02 255);
+    --color-muted: oklch(48% 0.017 255);
+    --color-faint: oklch(64% 0.014 255);
+
+    /* фирменный синий — кнопки и ссылки */
+    --color-brand: oklch(54% 0.19 258);
+    --color-brand-hover: oklch(48% 0.19 258);
+    --color-brand-soft: oklch(95.5% 0.03 258);
+    --color-brand-ink: oklch(42% 0.17 258);
+    --color-on-brand: oklch(100% 0 0);
+
+    /* акцент — стекло, подсветка цифр и бейджей */
+    --color-accent: oklch(72% 0.13 205);
+    --color-accent-soft: oklch(95% 0.035 205);
+    --color-accent-ink: oklch(45% 0.10 205);
+
+    /* предупреждения: калибровка ADAS, «цена по запросу» */
+    --color-warn: oklch(76% 0.15 75);
+    --color-warn-soft: oklch(96.5% 0.04 85);
+    --color-warn-ink: oklch(45% 0.10 65);
+
+    /* тёмные блоки — герой и подвал */
+    --color-night: oklch(21% 0.03 260);
+    --color-night-2: oklch(26% 0.035 260);
+    --color-on-night: oklch(97% 0.005 250);
+    --color-on-night-muted: oklch(74% 0.015 255);
+
+    --radius-card: 1rem;
+    --radius-pill: 999px;
+
+    --shadow-card: 0 1px 2px oklch(21% 0.02 255 / 0.04), 0 8px 24px -12px oklch(21% 0.02 255 / 0.12);
+    --shadow-lift: 0 2px 4px oklch(21% 0.02 255 / 0.05), 0 16px 32px -12px oklch(21% 0.02 255 / 0.18);
+}
+
+/*
+ * Тёмная тема по системной настройке. Меняем только значения переменных —
+ * разметка остаётся прежней.
+ */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-canvas: oklch(17% 0.02 260);
+        --color-surface: oklch(21.5% 0.022 260);
+        --color-sunken: oklch(25% 0.024 260);
+        --color-line: oklch(30% 0.025 260);
+        --color-line-strong: oklch(38% 0.03 260);
+
+        --color-ink: oklch(96% 0.005 250);
+        --color-muted: oklch(74% 0.015 255);
+        --color-faint: oklch(60% 0.018 255);
+
+        --color-brand: oklch(64% 0.17 258);
+        --color-brand-hover: oklch(70% 0.16 258);
+        --color-brand-soft: oklch(30% 0.06 258);
+        --color-brand-ink: oklch(82% 0.10 258);
+
+        --color-accent-soft: oklch(30% 0.05 205);
+        --color-accent-ink: oklch(82% 0.09 205);
+
+        --color-warn-soft: oklch(30% 0.05 75);
+        --color-warn-ink: oklch(87% 0.09 80);
+
+        --color-night: oklch(14% 0.02 260);
+        --color-night-2: oklch(19% 0.025 260);
+
+        --shadow-card: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px -12px oklch(0% 0 0 / 0.6);
+        --shadow-lift: 0 2px 4px oklch(0% 0 0 / 0.35), 0 16px 32px -12px oklch(0% 0 0 / 0.7);
+    }
+}
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+        background-color: var(--color-canvas);
+        color: var(--color-ink);
+    }
+
+    h1, h2, h3 {
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
+    }
+
+    /* Управление с клавиатуры должно быть видно — но только при навигации с неё. */
+    :focus-visible {
+        outline: 2px solid var(--color-brand);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+
+    ::selection {
+        background: var(--color-brand);
+        color: var(--color-on-brand);
+    }
+}
+
+@layer components {
+    /* Ряд фильтров на телефоне уезжает вбок вместо того, чтобы ломать сетку. */
+    .scroll-row {
+        display: flex;
+        gap: 0.5rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        scroll-snap-type: x proximity;
+        margin-inline: -1rem;
+        padding-inline: 1rem;
+    }
+
+    .scroll-row::-webkit-scrollbar {
+        display: none;
+    }
+
+    .scroll-row > * {
+        scroll-snap-align: start;
+        flex: 0 0 auto;
+    }
+}
+
+/* Уважаем системную настройку «меньше движения». */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
