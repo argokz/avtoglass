@@ -34,6 +34,14 @@ readonly class ProductFilter
         public ?string $query = null,
         public ProductSort $sort = ProductSort::PriceAsc,
         public bool $inStockOnly = false,
+        /**
+         * Марка самого стекла: AGC, КМК, XYG, СПЕКТР.
+         *
+         * Для покупателя это второй по важности вопрос после цены — разброс
+         * между китайским и европейским стеклом на одну машину бывает трёхкратным,
+         * и выбирают именно по нему. В базе марка стекла живёт как поставщик.
+         */
+        public ?int $supplierId = null,
     ) {}
 
     public static function fromRequest(Request $request, ?int $carModelId = null): self
@@ -47,10 +55,11 @@ readonly class ProductFilter
             type: GlassType::tryFrom((string) $request->query('type')),
             options: $options,
             carModelId: $carModelId,
-            year: self::cleanYear($request->query('year')),
+            year: self::sanitizeYear($request->query('year')),
             query: self::cleanQuery($request->query('q')),
             sort: ProductSort::tryFrom((string) $request->query('sort')) ?? ProductSort::PriceAsc,
             inStockOnly: $request->boolean('in_stock'),
+            supplierId: ((int) $request->query('brand')) ?: null,
         );
     }
 
@@ -62,7 +71,8 @@ readonly class ProductFilter
 
     public function hasAnyFilter(): bool
     {
-        return $this->type !== null || $this->options !== [] || $this->inStockOnly || $this->year !== null;
+        return $this->type !== null || $this->options !== [] || $this->inStockOnly
+            || $this->year !== null || $this->supplierId !== null;
     }
 
     /**
@@ -85,6 +95,7 @@ readonly class ProductFilter
             // ссылку длиннее, чем она есть по смыслу.
             'sort' => $this->sort === ProductSort::PriceAsc ? null : $this->sort->value,
             'in_stock' => $this->inStockOnly ? 1 : null,
+            'brand' => $this->supplierId,
             'q' => $this->query,
         ];
 
@@ -112,8 +123,13 @@ readonly class ProductFilter
     /**
      * Год выпуска. Верхняя граница — следующий календарный: новые модели
      * продаются как «2027» уже осенью 2026-го.
+     *
+     * Публичный, потому что год приходит не только из query-строки: его же
+     * присылает Livewire-компонент витрины и подставляет разбор VIN.
+     * Проверка должна быть одна на всех, иначе через один из входов
+     * рано или поздно протечёт мусор.
      */
-    private static function cleanYear(mixed $value): ?int
+    public static function sanitizeYear(mixed $value): ?int
     {
         $year = (int) $value;
 

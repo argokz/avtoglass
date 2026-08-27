@@ -40,6 +40,7 @@ class ProductQuery
             year: $filter->year,
             query: $filter->query,
             inStockOnly: $filter->inStockOnly,
+            supplierId: $filter->supplierId,
         );
 
         return $this->build($filter)
@@ -47,6 +48,39 @@ class ProductQuery
             ->selectRaw('glass_type, COUNT(*) as total')
             ->groupBy('glass_type')
             ->pluck('total', 'glass_type');
+    }
+
+    /**
+     * Марки стекла, доступные под текущий отбор, со счётчиками.
+     *
+     * Считаем без учёта уже выбранной марки — иначе в фильтре осталась бы
+     * одна кнопка, та, что нажата, и вернуться к остальным было бы нечем.
+     *
+     * @return Collection<int,object{id:int,name:string,tier:string,total:int}>
+     */
+    public function countsBySupplier(ProductFilter $filter): Collection
+    {
+        $without = new ProductFilter(
+            type: $filter->type,
+            options: $filter->options,
+            carModelId: $filter->carModelId,
+            year: $filter->year,
+            query: $filter->query,
+            inStockOnly: $filter->inStockOnly,
+        );
+
+        return DB::table('offers')
+            ->join('suppliers', 'suppliers.id', '=', 'offers.supplier_id')
+            ->whereIn('offers.product_id', $this->build($without)->reorder()->select('products.id'))
+            ->where('offers.is_active', true)
+            ->groupBy('suppliers.id', 'suppliers.name', 'suppliers.tier')
+            ->orderByDesc(DB::raw('COUNT(DISTINCT offers.product_id)'))
+            ->get([
+                'suppliers.id',
+                'suppliers.name',
+                'suppliers.tier',
+                DB::raw('COUNT(DISTINCT offers.product_id) as total'),
+            ]);
     }
 
     /**
@@ -108,6 +142,17 @@ class ProductQuery
 
         if ($filter->inStockOnly) {
             $query->where('in_stock', true);
+        }
+
+        /*
+         * Марка стекла. Отбор идёт по предложениям: карточка остаётся, если
+         * хоть один поставщик её возит — иначе фильтр прятал бы товар,
+         * который на самом деле есть, просто у другого производителя.
+         */
+        if ($filter->supplierId !== null) {
+            $query->whereHas('offers', fn (Builder $q) => $q
+                ->where('supplier_id', $filter->supplierId)
+                ->where('is_active', true));
         }
 
         if ($filter->query !== null) {

@@ -52,11 +52,21 @@
             <label for="of-car-{{ $id }}" class="mb-1 block text-xs font-semibold text-muted">
                 Автомобиль
             </label>
+            {{-- VIN, введённый на странице подбора, подставляем сюда сам:
+                 переписывать 17 знаков второй раз никто не станет, а менеджеру
+                 он нужен, чтобы пробить стекло точно. --}}
             <input id="of-car-{{ $id }}" type="text" name="car_info" maxlength="200"
-                   value="{{ old('car_info') }}" placeholder="Марка, модель, год — например Toyota Camry 2018"
+                   value="{{ old('car_info', session('vin') ? 'VIN '.session('vin') : '') }}"
+                   placeholder="Марка, модель, год — например Toyota Camry 2018"
                    class="w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm
                           placeholder:text-faint focus:border-brand focus:outline-none">
-            <p class="mt-1 text-xs text-faint">Знаете VIN — напишите его, подберём точнее</p>
+            <p class="mt-1 text-xs text-faint">
+                @if (session('vin'))
+                    VIN из подбора подставлен — можно дописать модель
+                @else
+                    Знаете VIN — напишите его, подберём точнее
+                @endif
+            </p>
         </div>
     @endif
 

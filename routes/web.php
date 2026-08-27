@@ -67,6 +67,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/dokument/reestr/{courier}', [DocumentController::class, 'manifest'])->name('document.manifest');
 });
 
+// Подбор по VIN. Отдельным адресом, а не вкладкой каталога: на него ссылаются
+// менеджеры в переписке с клиентом («пришлите VIN сюда»).
+Route::view('/vin', 'vin.index')->name('vin.form');
+
 Route::get('/catalog', [CatalogController::class, 'brands'])->name('catalog.brands');
 Route::get('/tovar/{product:slug}', [CatalogController::class, 'product'])->name('catalog.product');
 
