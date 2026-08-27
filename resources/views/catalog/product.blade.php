@@ -73,6 +73,7 @@
                 'Артикул'     => $product->internal_code,
                 'Ширина'      => $product->width_mm ? $product->width_mm.' мм' : null,
                 'Высота'      => $product->height_mm ? $product->height_mm.' мм' : null,
+                'Отверстий'   => $product->holes_count ?: null,
                 'Тонировка'   => match ($product->tint) {
                     'green' => 'Зелёная', 'grey' => 'Серая', 'blue' => 'Голубая',
                     'bronze' => 'Бронзовая', 'clear' => 'Без тонировки', 'tinted' => 'Тонированное',
@@ -134,6 +135,39 @@
                     <p class="mt-1.5 text-sm text-muted">
                         до {{ number_format((float) $product->price_max, 0, ',', ' ') }} ₸ — зависит от производителя
                     </p>
+                @endif
+
+                {{--
+                    Установка рядом с ценой стекла.
+
+                    Без неё клиент видит одну сумму, а платит на пятнадцать тысяч
+                    больше — и узнаёт об этом от менеджера. Показываем сразу
+                    и складываем: человеку важно, сколько он отдаст всего.
+                --}}
+                @if ($installation)
+                    <div class="mt-3 rounded-xl bg-sunken px-3.5 py-3 text-sm">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <span class="text-muted">{{ $installation->name }}</span>
+                            <span class="font-semibold whitespace-nowrap">
+                                {{ number_format((float) $installation->price, 0, ',', ' ') }} ₸
+                            </span>
+                        </div>
+                        <div class="mt-2 flex items-baseline justify-between gap-3 border-t border-line pt-2">
+                            <span class="font-semibold">Со стеклом и работой</span>
+                            <span class="font-display font-extrabold whitespace-nowrap">
+                                {{ number_format((float) $product->price_min + (float) $installation->price, 0, ',', ' ') }} ₸
+                            </span>
+                        </div>
+
+                        @if ($product->camera && $calibration)
+                            {{-- Камера за стеклом означает обязательную калибровку.
+                                 Умолчать о ней — значит выставить счёт на месте. --}}
+                            <p class="mt-2 text-xs text-warn-ink">
+                                За стеклом камера: после замены нужна {{ mb_strtolower($calibration->name) }}
+                                — {{ number_format((float) $calibration->price, 0, ',', ' ') }} ₸
+                            </p>
+                        @endif
+                    </div>
                 @endif
             @else
                 <div class="font-display text-xl font-bold text-muted">Цена по запросу</div>
@@ -199,6 +233,11 @@
                                     @endif
                                 </div>
                                 <div class="mt-0.5 text-xs text-faint">
+                                    {{-- Страна — второй вопрос после цены: на одну машину
+                                         китайское стекло и европейское различаются втрое --}}
+                                    @if ($offer->supplier->country)
+                                        <span class="font-semibold text-ink">{{ $offer->supplier->country }}</span> ·
+                                    @endif
                                     {{ $offer->supplier->tierLabel() }}
                                     @if ($offer->warranty_months)
                                         · гарантия {{ $offer->warranty_months }} мес.

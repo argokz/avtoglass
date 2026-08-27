@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Cart\Cart;
+use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Jobs\AnnounceNewOrder;
@@ -10,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Interaction;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\Service;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
@@ -48,6 +50,7 @@ class CreateOrder
 
             if ($product !== null) {
                 $this->addProduct($order, $product);
+                $this->addInstallation($order);
                 $order->recalculateTotal();
             }
 
@@ -113,6 +116,7 @@ class CreateOrder
                 $this->addProduct($order, $item->product, $item->quantity);
             }
 
+            $this->addInstallation($order);
             $order->recalculateTotal();
             $customer->increment('orders_count');
 
@@ -149,6 +153,37 @@ class CreateOrder
             'price' => $offer?->price_retail ?? $product->price_min,
             'quantity' => $quantity,
         ]);
+    }
+
+    /**
+     * Дописывает установку, если клиент выбрал замену в сервисе.
+     *
+     * Работа становится обычной позицией заказа, а не отдельной сущностью:
+     * тогда она сама собой попадает в сумму, в чек, в счёт и в акт — и нигде
+     * не приходится помнить «а ещё прибавь установку».
+     *
+     * Каждому стеклу своя: замена лобового и замена бокового — разные деньги.
+     * Считаем по позициям заказа, а не по одной карточке, потому что корзина
+     * может содержать и лобовое, и боковое сразу.
+     */
+    private function addInstallation(Order $order): void
+    {
+        if ($order->fulfillment !== FulfillmentType::Installation) {
+            return;
+        }
+
+        foreach ($order->items()->whereNotNull('product_id')->with('product')->get() as $item) {
+            $service = Service::defaultFor($item->product?->glass_type);
+
+            if ($service === null) {
+                continue;
+            }
+
+            $order->items()->create([
+                ...$service->toOrderItem(),
+                'quantity' => $item->quantity,
+            ]);
+        }
     }
 
     /** Машину клиента дописываем к комментарию: отдельного поля под неё в заявке нет. */

@@ -2,13 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Catalog\ModelYears;
-use App\Catalog\ProductFilter;
 use App\Catalog\ProductQuery;
 use App\Models\CarBrand;
 use App\Models\CarModel;
 use App\Models\Product;
-use Illuminate\Http\Request;
+use App\Models\Service;
 use Illuminate\View\View;
 
 /**
@@ -17,10 +15,7 @@ use Illuminate\View\View;
  */
 class CatalogController extends Controller
 {
-    public function __construct(
-        private readonly ProductQuery $products,
-        private readonly ModelYears $years,
-    ) {}
+    public function __construct(private readonly ProductQuery $products) {}
 
     /** Все марки, у которых есть что показать. */
     public function brands(): View
@@ -44,23 +39,15 @@ class CatalogController extends Controller
         ]);
     }
 
-    public function products(Request $request, CarBrand $brand, CarModel $model): View
+    public function products(CarBrand $brand, CarModel $model): View
     {
         abort_unless($model->car_brand_id === $brand->id, 404);
 
-        $filter = ProductFilter::fromRequest($request, carModelId: $model->id);
-
+        // Фильтры и выдачу собирает Livewire-компонент: состояние живёт
+        // в адресной строке, и контроллеру остаётся только сама страница.
         return view('catalog.products', [
             'brand' => $brand,
             'model' => $model,
-            'filter' => $filter,
-            'products' => $this->products->paginate($filter),
-            'types' => $this->products->countsByType($filter),
-            'years' => $this->years->for($model),
-            // Поколение показываем в ответ на выбранный год: покупатель
-            // называет год, а «XV40» видит как подтверждение, что мы поняли,
-            // о какой машине речь.
-            'generation' => $this->years->generationFor($model, $filter->year),
         ]);
     }
 
@@ -74,6 +61,12 @@ class CatalogController extends Controller
         return view('catalog.product', [
             'product' => $product,
             'related' => $this->related($product),
+            // Цену работы держит прайс работ, а не карточка: она одна на весь
+            // тип стекла, и менеджер правит её в одном месте.
+            'installation' => Service::defaultFor($product->glass_type),
+            'calibration' => $product->camera
+                ? Service::where('slug', 'kalibrovka-adas')->active()->first()
+                : null,
         ]);
     }
 

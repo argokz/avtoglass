@@ -172,7 +172,12 @@ class Order extends Model
         return $this->hasMany(StockReservation::class);
     }
 
-    /** Сумма по позициям. Работы сюда не входят — их считает менеджер. */
+    /**
+     * Сумма по позициям — вместе с работами.
+     *
+     * Работа лежит такой же позицией, как стекло, поэтому складывать её
+     * отдельно не нужно: она сама попадает и в сумму, и в чек, и в счёт.
+     */
     public function recalculateTotal(): void
     {
         $total = $this->items->sum(fn (OrderItem $item) => (float) $item->price * $item->quantity);
