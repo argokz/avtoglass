@@ -108,6 +108,28 @@ class ProductsTable
                 Filter::make('multi_offer')
                     ->label('Несколько поставщиков')
                     ->query(fn (Builder $query) => $query->has('offers', '>', 1)),
+
+                /*
+                 * Что осталось заполнить руками. В прайсах этого нет: снимков
+                 * там не бывает вовсе, габариты попадаются в полутора процентах
+                 * названий. Фильтры превращают «когда-нибудь дозаполним»
+                 * в конкретный список на сегодня.
+                 */
+                TernaryFilter::make('photo')
+                    ->label('Со снимком')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('image_path'),
+                        false: fn (Builder $query) => $query->whereNull('image_path'),
+                        blank: fn (Builder $query) => $query,
+                    ),
+
+                TernaryFilter::make('dimensions')
+                    ->label('С габаритами')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('width_mm'),
+                        false: fn (Builder $query) => $query->whereNull('width_mm'),
+                        blank: fn (Builder $query) => $query,
+                    ),
             ])
             ->defaultSort('views', 'desc')
             ->recordActions([EditAction::make()])

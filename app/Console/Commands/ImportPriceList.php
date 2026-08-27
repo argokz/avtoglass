@@ -122,6 +122,12 @@ class ImportPriceList extends Command
                         'year_to' => $parsed->yearTo,
                         'body_type' => $parsed->bodyType,
                         'doors' => $parsed->doors,
+
+                        // Габариты и отверстия разбор находит в названии; раньше
+                        // их здесь не перечислили, и находка терялась.
+                        'width_mm' => $parsed->widthMm,
+                        'height_mm' => $parsed->heightMm,
+                        'holes_count' => $parsed->holesCount,
                         'eurocode' => $parsed->eurocode,
                         'internal_code' => $parsed->internalCode,
                         'price' => $price,

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Catalog\CatalogCounters;
 use App\Catalog\FitmentYears;
 use App\Catalog\ModelNormalizer;
 use App\Catalog\NormalizedModel;
@@ -229,6 +230,12 @@ class BuildCatalog extends Command
             'eurocode' => $row->eurocode,
             'internal_code' => $row->internal_code,
             'tint' => null,
+
+            // Габариты покупатель сверяет со снятым стеклом, когда машину
+            // не удалось определить по названию, — для него это последняя проверка.
+            'width_mm' => $row->width_mm,
+            'height_mm' => $row->height_mm,
+            'holes_count' => $row->holes_count,
             'needs_review' => $needsReview,
             // публикуем только то, в чём уверены: без картинок и цен витрине нечего показывать
             'is_published' => ! $needsReview && $row->price !== null,
@@ -492,21 +499,7 @@ class BuildCatalog extends Command
      */
     private function refreshCounters(): void
     {
-        DB::statement('
-            UPDATE car_models SET products_count = (
-                SELECT COUNT(DISTINCT fitments.product_id)
-                FROM fitments
-                JOIN products ON products.id = fitments.product_id
-                WHERE fitments.car_model_id = car_models.id AND products.is_published = true
-            )
-        ');
-
-        DB::statement('
-            UPDATE car_brands SET models_count = (
-                SELECT COUNT(*) FROM car_models
-                WHERE car_models.car_brand_id = car_brands.id AND car_models.products_count > 0
-            )
-        ');
+        (new CatalogCounters)->refresh();
     }
 
     private function truncateCatalog(): void

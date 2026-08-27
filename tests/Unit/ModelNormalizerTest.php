@@ -109,7 +109,38 @@ class ModelNormalizerTest extends TestCase
             'без пробела' => ['ESTIMA/PREVIA', 'Estima'],
             'пробел после' => ['Avensis/ Caldina', 'Avensis'],
             'с дефисом' => ['HI-LUX/FORTUNER', 'HI-LUX'],
-            'индекс кузова остаётся' => ['Corolla KE140/KE150', 'Corolla KE140/KE150'],
+            // Индекс кузова второй машиной не считается, но и в имени модели
+            // ему не место: он уезжает в поколение — см. тест ниже.
+            'индекс кузова не режет модель' => ['Corolla KE140/KE150', 'Corolla'],
+        ];
+    }
+
+    /**
+     * Перечисление индексов кузова — это одно поколение, а не имя модели.
+     *
+     * Поставщики пишут пары слитно: «W210,S210» у Mercedes — седан и универсал
+     * одного поколения, «E60/E61» у BMW. Пока такой хвост оставался в имени,
+     * одна машина разъезжалась в справочнике на несколько карточек.
+     */
+    #[DataProvider('enumeratedGenerationCases')]
+    public function test_перечисление_индексов_кузова_уходит_в_поколение(
+        string $brand,
+        string $raw,
+        string $name,
+        string $generation,
+    ): void {
+        $result = $this->normalizer->normalize($brand, $raw);
+
+        $this->assertSame($name, $result->name);
+        $this->assertSame($generation, $result->generation);
+    }
+
+    public static function enumeratedGenerationCases(): array
+    {
+        return [
+            'через слэш' => ['BMW', '5 E60 /E61', '5', 'E60 /E61'],
+            'через запятую' => ['Mercedes-Benz', 'E-Class W210,S210', 'E-Class', 'W210,S210'],
+            'индекс кузова Toyota' => ['Toyota', 'Corolla KE140/KE150', 'Corolla', 'KE140/KE150'],
         ];
     }
 
@@ -212,5 +243,92 @@ class ModelNormalizerTest extends TestCase
         $result = $this->normalizer->normalize('Тест', 'RED');
 
         $this->assertNotSame('', $result->name);
+    }
+
+    // ------------------------------------------------------------------
+    // мусор поставщика в колонке модели
+    // ------------------------------------------------------------------
+
+    /**
+     * Из-за этих хвостов одна машина разъезжалась в справочнике на шесть
+     * карточек: «5», «5 SER», «5 кругл», «5 квадр», «5 изм», «5 грушевид».
+     */
+    #[DataProvider('supplierNoiseCases')]
+    public function test_шум_поставщика_в_имени_модели_убирается(
+        string $brand,
+        string $raw,
+        string $expected,
+    ): void {
+        $this->assertSame($expected, $this->normalizer->normalize($brand, $raw)->name);
+    }
+
+    public static function supplierNoiseCases(): array
+    {
+        return [
+            // Форма фар — способ поставщика различить поколения одной машины
+            'круглые фары' => ['BMW', '5 кругл', '5'],
+            'квадратные фары' => ['BMW', '5 квадр', '5'],
+            'грушевидные фары' => ['BMW', '5 грушевид', '5'],
+
+            // Сокращение «серия»
+            'SER без окончания' => ['BMW', '5 SER', '5'],
+
+            // Скобочный хвост, в том числе обрезанный по длине колонки
+            'индекс кузова в скобках' => ['Audi', '100 (44к)', '100'],
+            'незакрытая скобка' => ['ВАЗ', 'Vesta (совмещ. конне', 'Vesta'],
+
+            // Индекс кузова словом — число забирается вместе со словом
+            'кузов словом' => ['Audi', '100 44 кузов', '100'],
+
+            // Характеристики стекла, доехавшие до колонки модели
+            'неподвижное' => ['ВАЗ', 'Vesta .непод', 'Vesta'],
+            'заднее без окончания' => ['ВАЗ', 'Vesta зад', 'Vesta'],
+            'кузовная удлинённая' => ['Volkswagen', 'Transporter T4 удлиненная', 'Transporter'],
+            'изменённое' => ['BMW', '5 изм', '5'],
+            'состояние через точку' => ['Audi', '100 Б.У', '100'],
+
+            // Марка самого стекла, а не машины
+            'марка стекла SAT' => ['Kia', 'Ceed SAT', 'Ceed'],
+            'марка стекла Flexline' => ['BMW', 'X5 Flexline', 'X5'],
+
+            // Номер артикула в хвосте
+            'артикул в хвосте' => ['Volkswagen', 'Transporter T4 8537', 'Transporter'],
+
+            // Обрывок примечания из одной кириллической буквы
+            'одинокая кириллица' => ['Hyundai', 'Elantra а', 'Elantra'],
+
+            // Индекс поколения одной латинской буквой
+            'буквенный индекс Opel' => ['Opel', 'Astra H', 'Astra'],
+            'буквенный индекс через слово' => ['Opel', 'Astra J', 'Astra'],
+        ];
+    }
+
+    /**
+     * Обратная сторона: похожие хвосты бывают настоящими машинами, и склеить
+     * их куда опаснее, чем оставить лишнюю карточку. Pajero Sport — это не
+     * Pajero, и стекло у них разное.
+     */
+    #[DataProvider('mustNotMergeCases')]
+    public function test_разные_машины_не_склеиваются(string $brand, string $raw, string $expected): void
+    {
+        $this->assertSame($expected, $this->normalizer->normalize($brand, $raw)->name);
+    }
+
+    public static function mustNotMergeCases(): array
+    {
+        return [
+            'Pajero Sport отдельная машина' => ['Mitsubishi', 'Pajero Sport', 'Pajero Sport'],
+            'Pajero IO отдельная машина' => ['Mitsubishi', 'Pajero IO', 'Pajero IO'],
+            'Corolla Verso отдельная машина' => ['Toyota', 'Corolla Verso', 'Corolla Verso'],
+            'Corolla Cross отдельная машина' => ['Toyota', 'Corolla Cross', 'Corolla Cross'],
+            'Vesta SW Cross отдельная машина' => ['ВАЗ', 'Vesta SW Cross', 'Vesta SW Cross'],
+            'GT — комплектация, а не индекс' => ['Hyundai', 'Elantra GT', 'Elantra GT'],
+
+            // У числовой головы одиночная буква — вариант кузова: 323F хэтчбек
+            'числовая голова буквы не отдаёт' => ['Mazda', '323 F', '323 F'],
+
+            // SL — модель Mercedes, а не марка стекла
+            'SL не считается маркой стекла' => ['Mercedes-Benz', 'SL', 'SL'],
+        ];
     }
 }
