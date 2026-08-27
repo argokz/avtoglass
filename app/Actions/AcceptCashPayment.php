@@ -35,11 +35,23 @@ class AcceptCashPayment
     ): ?Payment {
         $amount = round($amount, 2);
 
-        if (! $this->canAccept($order, $amount)) {
-            return null;
-        }
-
+        /*
+         * Остаток считается и проверяется под блокировкой заказа.
+         *
+         * Раньше проверка стояла до транзакции, и два исполнителя — курьер
+         * на адресе и менеджер в панели — могли принять один и тот же остаток
+         * одновременно: оба видели «к оплате 25 000», оба записали по 25 000,
+         * и в кассе оказалось вдвое больше, чем в заказе.
+         */
         return DB::transaction(function () use ($order, $amount, $receivedBy, $assignment) {
+            $locked = Order::query()->whereKey($order->getKey())->lockForUpdate()->first();
+
+            if ($locked === null || ! $this->canAccept($locked, $amount)) {
+                return null;
+            }
+
+            $order = $locked;
+
             $payment = Payment::create([
                 'order_id' => $order->id,
                 'provider' => 'cash',
@@ -91,7 +103,7 @@ class AcceptCashPayment
      */
     private function scheduleReceipt(Payment $payment): void
     {
-        if (! config('fiscal.enabled') || $payment->receipt()->exists()) {
+        if (! settings()->enabled('fiscal') || $payment->receipt()->exists()) {
             return;
         }
 
@@ -102,6 +114,12 @@ class AcceptCashPayment
             'amount' => $payment->amount,
         ]);
 
-        IssueReceipt::dispatch($receipt);
+        /*
+         * afterCommit обязателен: чек ставится в очередь внутри транзакции,
+         * и без этого воркер успевает схватить задачу раньше, чем платёж
+         * окажется в базе. Тогда он не находит ни чека, ни оплаты и тихо
+         * выходит — а клиент остаётся без фискального документа.
+         */
+        IssueReceipt::dispatch($receipt)->afterCommit();
     }
 }

@@ -6,8 +6,10 @@ use App\Enums\PaymentStatus;
 use App\Models\Payment;
 use App\Payments\CallbackResult;
 use App\Payments\PaymentGateway;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -45,21 +47,36 @@ class HalykEpayGateway implements PaymentGateway
         $invoiceId = $this->invoiceId($payment);
         $secretHash = $this->secretHash($payment);
 
-        $response = Http::asForm()
-            ->timeout(20)
-            ->post($this->endpoint('oauth'), [
-                'grant_type' => 'client_credentials',
-                'scope' => 'webapi usermanagement email_send verification statement statistics payment',
-                'client_id' => config('payments.halyk.client_id'),
-                'client_secret' => config('payments.halyk.client_secret'),
-                'invoiceID' => $invoiceId,
-                'amount' => (int) round((float) $payment->amount),
-                'currency' => $payment->currency,
-                'terminal' => config('payments.halyk.terminal'),
-                'postLink' => route('payment.halyk.callback'),
-                'failurePostLink' => route('payment.halyk.callback'),
-                'secret_hash' => $secretHash,
+        /*
+         * Сеть до банка — самое ненадёжное звено в оплате, и падать из-за неё
+         * нельзя. Ответ 5xx мы разбираем ниже, но настоящий обрыв — таймаут,
+         * недоступный DNS, отвалившийся TLS — приходит исключением, и без
+         * этого перехвата клиент вместо «касса недоступна» видит пятисотую.
+         */
+        try {
+            $response = Http::asForm()
+                ->timeout(20)
+                ->post($this->endpoint('oauth'), [
+                    'grant_type' => 'client_credentials',
+                    'scope' => 'webapi usermanagement email_send verification statement statistics payment',
+                    'client_id' => config('payments.halyk.client_id'),
+                    'client_secret' => config('payments.halyk.client_secret'),
+                    'invoiceID' => $invoiceId,
+                    'amount' => (int) round((float) $payment->amount),
+                    'currency' => $payment->currency,
+                    'terminal' => config('payments.halyk.terminal'),
+                    'postLink' => route('payment.halyk.callback'),
+                    'failurePostLink' => route('payment.halyk.callback'),
+                    'secret_hash' => $secretHash,
+                ]);
+        } catch (ConnectionException $e) {
+            Log::warning('Halyk ePay недоступен', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
             ]);
+
+            return null;
+        }
 
         if (! $response->successful() || ! $response->json('access_token')) {
             return null;

@@ -103,7 +103,7 @@ class ApplyPaymentCallback
      */
     private function scheduleReceipt(Payment $payment): void
     {
-        if (! config('fiscal.enabled')) {
+        if (! settings()->enabled('fiscal')) {
             return;
         }
 
@@ -120,6 +120,12 @@ class ApplyPaymentCallback
             'amount' => $payment->amount,
         ]);
 
-        IssueReceipt::dispatch($receipt);
+        /*
+         * afterCommit обязателен: чек ставится в очередь внутри транзакции,
+         * и без этого воркер успевает схватить задачу раньше, чем платёж
+         * окажется в базе. Тогда он не находит ни чека, ни оплаты и тихо
+         * выходит — а клиент остаётся без фискального документа.
+         */
+        IssueReceipt::dispatch($receipt)->afterCommit();
     }
 }

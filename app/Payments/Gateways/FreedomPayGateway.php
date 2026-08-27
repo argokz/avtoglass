@@ -6,6 +6,7 @@ use App\Enums\PaymentStatus;
 use App\Models\Payment;
 use App\Payments\CallbackResult;
 use App\Payments\PaymentGateway;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -52,7 +53,22 @@ class FreedomPayGateway implements PaymentGateway
 
         $params['pg_sig'] = $this->sign('init_payment.php', $params);
 
-        $response = Http::asForm()->timeout(20)->post(config('payments.freedompay.init_url'), $params);
+        /*
+         * Сеть до банка — самое ненадёжное звено в оплате. Ответ 5xx разбираем
+         * ниже, но настоящий обрыв — таймаут, недоступный DNS, отвалившийся TLS
+         * — приходит исключением, и без перехвата клиент вместо «касса
+         * недоступна» получает пятисотую.
+         */
+        try {
+            $response = Http::asForm()->timeout(20)->post(config('payments.freedompay.init_url'), $params);
+        } catch (ConnectionException $e) {
+            Log::warning('Freedom Pay недоступен', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
 
         if (! $response->successful()) {
             return null;
