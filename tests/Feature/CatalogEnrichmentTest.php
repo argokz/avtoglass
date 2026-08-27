@@ -121,12 +121,13 @@ class CatalogEnrichmentTest extends TestCase
      */
     public function test_спорные_заводы_остаются_человеку(): void
     {
-        $sl = Supplier::factory()->create(['name' => 'SL', 'country' => null]);
+        // Завод, которого нет в списке бесспорных: справочник заведомо неполный
+        $unknown = Supplier::factory()->create(['name' => 'Новый Завод', 'country' => null]);
 
         $result = app(SupplierCountries::class)->fill();
 
-        $this->assertNull($sl->fresh()->country);
-        $this->assertContains('SL', $result['unknown']);
+        $this->assertNull($unknown->fresh()->country);
+        $this->assertContains('Новый Завод', $result['unknown']);
     }
 
     /** «Оригинал» и «Не указан» — не заводы, спрашивать про них нечего. */
@@ -153,10 +154,10 @@ class CatalogEnrichmentTest extends TestCase
 
     public function test_команда_отчитывается_о_спорных(): void
     {
-        Supplier::factory()->create(['name' => 'SL', 'country' => null]);
+        Supplier::factory()->create(['name' => 'Новый Завод', 'country' => null]);
 
         $this->artisan('catalog:enrich')
-            ->expectsOutputToContain('SL')
+            ->expectsOutputToContain('Новый Завод')
             ->assertSuccessful();
     }
 }
