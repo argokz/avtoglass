@@ -60,6 +60,25 @@ class Payment extends Model
         return ! $this->isCash() || $this->settled_at !== null;
     }
 
+    public function settledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'settled_by');
+    }
+
+    /**
+     * Наличные, которые взяли у клиента, но ещё не сдали в кассу.
+     *
+     * Только успешные: отклонённый или возвращённый платёж на руках
+     * не лежит, и в сводке инкассации ему делать нечего.
+     */
+    public function scopeCashOnHand(Builder $query): Builder
+    {
+        return $query->where('provider', 'cash')
+            ->where('status', PaymentStatus::Succeeded)
+            ->whereNull('settled_at')
+            ->whereNotNull('received_by');
+    }
+
     public function receipt(): HasOne
     {
         return $this->hasOne(Receipt::class);
