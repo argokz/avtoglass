@@ -53,7 +53,13 @@ enum OrderStatus: string
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::New => [self::InProgress, self::Confirmed, self::Cancelled],
+            /*
+             * Из «новой» можно сразу в «записана»: когда клиент выбрал время
+             * онлайн, работа назначена ещё до того, как менеджер до заявки
+             * дошёл. Подтверждённой она при этом не считается — наличие стекла
+             * никто пока не проверял.
+             */
+            self::New => [self::InProgress, self::Confirmed, self::Scheduled, self::Cancelled],
             self::InProgress => [self::Confirmed, self::Cancelled],
             self::Confirmed => [self::Scheduled, self::Completed, self::Cancelled],
             self::Scheduled => [self::Completed, self::Cancelled],

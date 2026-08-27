@@ -6,6 +6,7 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
+use App\Models\Product;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
@@ -70,6 +71,14 @@ Route::middleware('auth')->group(function () {
 // Подбор по VIN. Отдельным адресом, а не вкладкой каталога: на него ссылаются
 // менеджеры в переписке с клиентом («пришлите VIN сюда»).
 Route::view('/vin', 'vin.index')->name('vin.form');
+
+/*
+ * Запись на замену. Товар необязателен: записываются и «просто на замену»,
+ * когда стекло уже куплено или его подберёт мастер на месте.
+ */
+Route::get('/zapis/{product:slug?}', fn (?Product $product = null) => view('booking.index', [
+    'product' => $product?->is_published ? $product : null,
+]))->name('booking.form');
 
 Route::get('/catalog', [CatalogController::class, 'brands'])->name('catalog.brands');
 Route::get('/tovar/{product:slug}', [CatalogController::class, 'product'])->name('catalog.product');

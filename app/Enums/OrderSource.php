@@ -10,6 +10,7 @@ enum OrderSource: string
     case Cart = 'cart';         // корзина: несколько позиций одной заявкой
     case Phone = 'phone';
     case WhatsApp = 'whatsapp';
+    case Booking = 'booking';      // клиент сам выбрал время на сайте
     case Manual = 'manual';       // менеджер завёл руками
 
     public function label(): string
@@ -20,6 +21,7 @@ enum OrderSource: string
             self::Cart => 'Корзина',
             self::Phone => 'Телефон',
             self::WhatsApp => 'WhatsApp',
+            self::Booking => 'Онлайн-запись',
             self::Manual => 'Заведён вручную',
         };
     }

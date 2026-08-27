@@ -159,6 +159,14 @@
                             </span>
                         </div>
 
+                        {{-- «Когда» для человека с разбитым стеклом стоит вровень
+                             с «сколько». Ссылка здесь, а не внизу страницы. --}}
+                        <a href="{{ route('booking.form', $product) }}" wire:navigate
+                           class="mt-2 block text-center text-sm font-semibold text-brand-ink
+                                  underline-offset-4 hover:underline">
+                            Выбрать время замены
+                        </a>
+
                         @if ($product->camera && $calibration)
                             {{-- Камера за стеклом означает обязательную калибровку.
                                  Умолчать о ней — значит выставить счёт на месте. --}}
