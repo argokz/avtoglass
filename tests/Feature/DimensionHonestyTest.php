@@ -115,7 +115,7 @@ class DimensionHonestyTest extends TestCase
         $invented = Product::factory()->create(['width_mm' => 1450, 'height_mm' => 870]);
         $this->stagingRow($invented, null);
 
-        $this->artisan('catalog:drop-invented-dimensions --apply')->assertSuccessful();
+        $this->artisan('catalog:drop-invented --apply')->assertSuccessful();
 
         $invented->refresh();
 
@@ -129,7 +129,7 @@ class DimensionHonestyTest extends TestCase
         $real = Product::factory()->create(['width_mm' => 1428, 'height_mm' => 862]);
         $this->stagingRow($real, 1428);
 
-        $this->artisan('catalog:drop-invented-dimensions --apply')->assertSuccessful();
+        $this->artisan('catalog:drop-invented --apply')->assertSuccessful();
 
         $this->assertSame(1428, (int) $real->fresh()->width_mm);
     }
@@ -139,11 +139,78 @@ class DimensionHonestyTest extends TestCase
         $product = Product::factory()->create(['width_mm' => 1450]);
         $this->stagingRow($product, null);
 
-        $this->artisan('catalog:drop-invented-dimensions')
+        $this->artisan('catalog:drop-invented')
             ->expectsOutputToContain('только подсчёт')
             ->assertSuccessful();
 
         $this->assertSame(1450, (int) $product->fresh()->width_mm);
+    }
+
+    // ------------------------------------------------------------------
+    // тонировка и описание
+    // ------------------------------------------------------------------
+
+    /**
+     * Цвет по умолчанию «зелёный» получили 5941 карточка из 5957. Для лобового
+     * это чаще всего правда, но покупатель выбирает между «зелёное» и «без
+     * тонировки» осознанно — утверждать цвет там, где мы его не знаем, нельзя.
+     */
+    public function test_тонировка_не_ставится_по_умолчанию(): void
+    {
+        $product = Product::factory()->create(['eurocode' => null, 'tint' => null]);
+
+        $scraper = app(AutoGlassScraper::class);
+        $scraper->applyDataToProduct($product, $scraper->fetchDataForProduct($product));
+
+        $this->assertNull($product->fresh()->tint);
+    }
+
+    /** Буквы еврокода цвет действительно кодируют — это законное основание. */
+    public function test_тонировка_из_еврокода_проставляется(): void
+    {
+        $product = Product::factory()->create(['eurocode' => '4185AGSV', 'tint' => null]);
+
+        $scraper = app(AutoGlassScraper::class);
+        $scraper->applyDataToProduct($product, $scraper->fetchDataForProduct($product));
+
+        $this->assertSame('green', $product->fresh()->tint);
+    }
+
+    public function test_тонировка_без_основания_стирается(): void
+    {
+        $guessed = Product::factory()->create(['eurocode' => null, 'tint' => 'green']);
+        $known = Product::factory()->create(['eurocode' => '4185AGSV', 'tint' => 'green']);
+
+        $this->artisan('catalog:drop-invented --apply')->assertSuccessful();
+
+        $this->assertNull($guessed->fresh()->tint);
+        $this->assertSame('green', $known->fresh()->tint, 'у этого цвет в еврокоде');
+    }
+
+    /**
+     * Шаблонная фраза повторяла заголовок и утверждала то, чего мы не знаем.
+     * Заодно пять тысяч почти одинаковых страниц — для поиска пустой текст.
+     */
+    public function test_описание_не_сочиняется(): void
+    {
+        $product = Product::factory()->create(['description' => null]);
+
+        $scraper = app(AutoGlassScraper::class);
+        $scraper->applyDataToProduct($product, $scraper->fetchDataForProduct($product));
+
+        $this->assertNull($product->fresh()->description);
+    }
+
+    /** Написанное человеком описание уборка не трогает. */
+    public function test_настоящее_описание_сохраняется(): void
+    {
+        $product = Product::factory()->create([
+            'description' => 'Стекло с подогревом зоны щёток, проверено на стенде.',
+        ]);
+
+        $this->artisan('catalog:drop-invented --apply')->assertSuccessful();
+
+        $this->assertNotNull($product->fresh()->description);
     }
 
     // ------------------------------------------------------------------

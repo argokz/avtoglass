@@ -83,8 +83,10 @@ class AutoGlassScraper
             'image_binary' => $imageBinary,
             'width_mm' => $derived['width_mm'] ?? null,
             'height_mm' => $derived['height_mm'] ?? null,
-            'holes_count' => $derived['holes_count'] ?? 0,
-            'tint' => $derived['tint'] ?? ($product->tint ?: 'green'),
+            // Ни цвет, ни число отверстий не подставляем «по умолчанию»:
+            // null здесь означает «не знаем», и так и должно доехать до карточки.
+            'holes_count' => $derived['holes_count'],
+            'tint' => $derived['tint'],
             'oem_code' => $derived['oem_code'] ?? $product->oem_code,
             'description' => $derived['description'] ?? null,
         ];
@@ -157,21 +159,20 @@ class AutoGlassScraper
     {
         $w = $product->width_mm;
         $h = $product->height_mm;
-        $tint = $product->tint ?: 'green';
-        $holes = $product->holes_count ?: 0;
+        $holes = $product->holes_count;
 
-        $eurocode = mb_strtoupper((string) $product->eurocode);
-
-        // Определение цвета по буквам еврокода
-        if (str_contains($eurocode, 'GS') || str_contains($eurocode, 'GY')) {
-            $tint = 'green';
-        } elseif (str_contains($eurocode, 'BS') || str_contains($eurocode, 'BL')) {
-            $tint = 'blue';
-        } elseif (str_contains($eurocode, 'BZ')) {
-            $tint = 'bronze';
-        } elseif (str_contains($eurocode, 'CL')) {
-            $tint = 'clear';
-        }
+        /*
+         * Тонировка — только из еврокода.
+         *
+         * Раньше по умолчанию ставилась «зелёная», и её получили 5941 карточка
+         * из 5957. Для лобового это чаще всего правда, но покупатель выбирает
+         * между «зелёное» и «без тонировки» осознанно, и утверждать цвет
+         * там, где мы его не знаем, — то же самое, что выдумывать размеры.
+         *
+         * Буквы еврокода цвет действительно кодируют, и это единственное
+         * основание, которое у нас есть. Нет еврокода — нет и ответа.
+         */
+        $tint = $product->tint ?: $this->tintFromEurocode((string) $product->eurocode);
 
         /*
          * Габариты не выдумываем.
@@ -194,8 +195,37 @@ class AutoGlassScraper
             'holes_count' => $holes,
             'tint' => $tint,
             'oem_code' => $product->oem_code,
-            'description' => $product->description ?: "Автомобильное стекло {$product->name} с заводской шелкографией и креплениями.",
+
+            /*
+             * Описание не сочиняем. Шаблон «Автомобильное стекло {название}
+             * с заводской шелкографией и креплениями» повторял заголовок
+             * и утверждал то, чего мы не знаем: шелкография и крепления есть
+             * не у всякого стекла. Заодно это пять тысяч почти одинаковых
+             * страниц — ровно то, что поисковик считает пустым текстом.
+             */
+            'description' => $product->description,
         ];
+    }
+
+    /**
+     * Цвет стекла из букв еврокода.
+     *
+     * Единственное основание, которое у нас есть: еврокод цвет действительно
+     * кодирует. Нет кода или нет в нём цветовой пары — возвращаем null,
+     * и характеристика на витрине просто не показывается.
+     */
+    private function tintFromEurocode(string $eurocode): ?string
+    {
+        $code = mb_strtoupper($eurocode);
+
+        return match (true) {
+            $code === '' => null,
+            str_contains($code, 'GS'), str_contains($code, 'GY') => 'green',
+            str_contains($code, 'BS'), str_contains($code, 'BL') => 'blue',
+            str_contains($code, 'BZ') => 'bronze',
+            str_contains($code, 'CL') => 'clear',
+            default => null,
+        };
     }
 
     /**
