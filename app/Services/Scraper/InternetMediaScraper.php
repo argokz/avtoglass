@@ -6,6 +6,7 @@ use App\Models\CarBrand;
 use App\Models\CarModel;
 use App\Models\Product;
 use App\Models\Supplier;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -34,7 +35,6 @@ class InternetMediaScraper
         'benson' => 'https://raw.githubusercontent.com/filippofilip95/car-logos-dataset/master/logos/optimized/benson.svg',
         'nordglass' => 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/NordGlass_logo.png/320px-NordGlass_logo.png',
         'kmk' => 'https://kmk.ru/img/logo.png',
-        'bor' => 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/AGC_Inc._logo.svg/320px-AGC_Inc._logo.svg.png',
     ];
 
     /**
@@ -54,7 +54,12 @@ class InternetMediaScraper
             $content = $this->downloadBrandLogo($brand->name, $slug);
 
             if ($content !== null) {
-                $ext = str_starts_with(trim($content), '<svg') || str_contains($content, '<svg') ? 'svg' : 'png';
+                /*
+                 * Расширение — по началу файла, а не по вхождению «<svg»
+                 * где угодно: у любой HTML-страницы ошибки внутри есть иконки
+                 * в <svg>, и так страница 404 сохранялась как brands/vaz.svg.
+                 */
+                $ext = $this->imageKind($content) ?? 'svg';
                 $path = "brands/{$slug}.{$ext}";
 
                 Storage::disk('public')->put($path, $content);
@@ -92,7 +97,12 @@ class InternetMediaScraper
                 str_contains($normalized, 'pilkington') => 'pilkington',
                 str_contains($normalized, 'benson') => 'benson',
                 str_contains($normalized, 'nordglass') => 'nordglass',
-                str_contains($normalized, 'bor') || str_contains($normalized, 'бор') || str_contains($normalized, 'bgc') => 'bor',
+                /*
+                 * У BOR и BGC (Бор, Россия) своего логотипа в открытых
+                 * источниках нет. Раньше им подставлялся знак AGC — японского
+                 * завода, — и покупатель видел чужую марку на российском
+                 * стекле. Лучше нарисованная заглушка с настоящим названием.
+                 */
                 str_contains($normalized, 'kmk') || str_contains($normalized, 'кмк') => 'kmk',
                 default => null,
             };
@@ -100,9 +110,11 @@ class InternetMediaScraper
             if ($matchKey && isset(self::SUPPLIER_LOGOS[$matchKey])) {
                 try {
                     $res = Http::withHeaders(['User-Agent' => 'AvtoGlassKZ/1.0'])->timeout(4)->get(self::SUPPLIER_LOGOS[$matchKey]);
-                    if ($res->successful() && strlen($res->body()) > 50) {
+                    $kind = $res->successful() ? $this->imageKind($res->body()) : null;
+
+                    if ($kind !== null) {
                         $content = $res->body();
-                        $ext = str_contains(self::SUPPLIER_LOGOS[$matchKey], '.svg') ? 'svg' : 'png';
+                        $ext = $kind;
                     }
                 } catch (\Throwable) {
                 }
@@ -158,7 +170,7 @@ class InternetMediaScraper
                 $total = min($total, $limit);
             }
             if ($total > 0) {
-                $bar = new ProgressBar(new ConsoleOutput(), $total);
+                $bar = new ProgressBar(new ConsoleOutput, $total);
                 $bar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %message%');
                 $bar->setMessage('поиск фото');
                 $bar->start();
@@ -259,7 +271,10 @@ class InternetMediaScraper
             $url = sprintf($pattern, $slug);
             try {
                 $res = Http::withHeaders(['User-Agent' => 'AvtoGlassKZ/1.0'])->timeout(3)->get($url);
-                if ($res->successful() && strlen($res->body()) > 100) {
+
+                // Код 200 ещё не значит, что пришла картинка: многие источники
+                // на отсутствующий файл отвечают обычной HTML-страницей.
+                if ($res->successful() && $this->imageKind($res->body()) !== null) {
                     return $res->body();
                 }
             } catch (\Throwable) {
@@ -269,7 +284,7 @@ class InternetMediaScraper
         return $this->generateBrandSvg($name);
     }
 
-    private function client(): \Illuminate\Http\Client\PendingRequest
+    private function client(): PendingRequest
     {
         return Http::withHeaders([
             'User-Agent' => 'AvtoGlassKZ/1.0 (https://avto-glass.kz; catalog photos; order@avto-glass.kz)',
@@ -610,6 +625,27 @@ class InternetMediaScraper
         }
     }
 
+    /**
+     * Что за картинка пришла — или null, если это вообще не картинка.
+     *
+     * SVG признаём только по началу файла. Проверка «есть ли где-то <svg»
+     * пропускает HTML: на любой странице ошибки иконки нарисованы в <svg>.
+     */
+    private function imageKind(string $binary): ?string
+    {
+        $head = ltrim(substr($binary, 0, 512), "\xEF\xBB\xBF \t\r\n");
+
+        if (stripos($head, '<!doctype html') === 0 || stripos($head, '<html') === 0) {
+            return null;
+        }
+
+        if (str_starts_with($head, '<svg') || (str_starts_with($head, '<?xml') && str_contains($head, '<svg'))) {
+            return 'svg';
+        }
+
+        return $this->rasterExtension($binary);
+    }
+
     private function rasterExtension(string $binary): ?string
     {
         $head = ltrim(substr($binary, 0, 256));
@@ -661,5 +697,4 @@ SVG;
 </svg>
 SVG;
     }
-
 }
