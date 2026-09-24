@@ -305,10 +305,7 @@ class PaymentTest extends TestCase
         $product = Product::factory()->create(['price_min' => 27000]);
         Offer::factory()->create(['product_id' => $product->id, 'price_retail' => 27000]);
 
-        $this->post(route('order.store', $product), [
-            'name' => 'Данил',
-            'phone' => '+7 700 123-45-67',
-        ]);
+        $this->post(route('order.store', $product), $this->orderPayload());
 
         $this->assertSame('27000.00', Order::sole()->total_amount);
     }

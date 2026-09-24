@@ -191,6 +191,33 @@ class ModelNormalizer
      * «A6 (С6)», «21-CТ». Глазами не отличить, а для базы это разные строки —
      * так одна модель и разъезжается на две.
      */
+    /**
+     * Выправляет раскладку в готовой строке, не трогая ничего другого.
+     *
+     * Нужно там, где строку уже собрали и пересобрать нельзя: в названиях
+     * товаров. Пересборка каталога создаёт карточки заново, а на них висят
+     * фотографии, остатки, резервы и позиции заказов.
+     */
+    public function fixLayout(string $value): string
+    {
+        return implode(' ', array_map(
+            fn (string $token) => $this->cyrillicIsIntruder($token)
+                ? strtr($token, $this->homoglyphs())
+                : $token,
+            preg_split('/\s+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: []
+        ));
+    }
+
+    /** @return array<string, string> */
+    private function homoglyphs(): array
+    {
+        return [
+            'А' => 'A', 'В' => 'B', 'Е' => 'E', 'К' => 'K', 'М' => 'M', 'Н' => 'H',
+            'О' => 'O', 'Р' => 'P', 'С' => 'C', 'Т' => 'T', 'У' => 'Y', 'Х' => 'X',
+            'а' => 'a', 'е' => 'e', 'о' => 'o', 'р' => 'p', 'с' => 'c', 'х' => 'x',
+        ];
+    }
+
     private function unifyHomoglyphs(string $value): string
     {
         static $map = [
@@ -202,11 +229,29 @@ class ModelNormalizer
         // Меняем только в токенах, которые и так похожи на код: есть цифра
         // и нет длинного словесного куска. Иначе «Веста» превратится в «Becta».
         return implode(' ', array_map(
-            fn (string $token) => preg_match('/\d/u', $token) && mb_strlen($token) <= 8
+            fn (string $token) => (preg_match('/\d/u', $token) && mb_strlen($token) <= 8)
+                || $this->cyrillicIsIntruder($token)
                 ? strtr($token, $map)
                 : $token,
             preg_split('/\s+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: []
         ));
+    }
+
+    /**
+     * Кириллица примешана к латинскому слову: «СLK-Class», «НR/V», «Х-Ray».
+     * Одна буква набрана не в той раскладке, и из-за неё модель заводится
+     * второй карточкой — покупатель, ищущий CLK, видит половину товара.
+     *
+     * Считаем буквы, а не позиции: пока кириллицы не больше латиницы, она
+     * здесь чужая. Как только перевес обратный — это русское слово с латинской
+     * примесью («NEXTстекло»), и переводить его в латиницу нельзя.
+     */
+    private function cyrillicIsIntruder(string $token): bool
+    {
+        $cyrillic = preg_match_all('/\p{Cyrillic}/u', $token);
+        $latin = preg_match_all('/\p{Latin}/u', $token);
+
+        return $cyrillic > 0 && $latin > 0 && $cyrillic <= $latin;
     }
 
     /**

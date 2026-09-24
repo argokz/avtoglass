@@ -55,21 +55,6 @@ class ServiceSeeder extends Seeder
                 'is_default' => true,
                 'sort' => 40,
             ],
-            /*
-             * Калибровка по умолчанию не предлагается: она нужна только там,
-             * где за стеклом стоит камера, и решает это мастер после осмотра.
-             * Но в прайсе она обязана быть — без неё ADAS после замены врёт.
-             */
-            [
-                'name' => 'Калибровка камеры ADAS',
-                'slug' => 'kalibrovka-adas',
-                'price' => 20000,
-                'glass_type' => GlassType::Windshield,
-                'duration_minutes' => 90,
-                'is_default' => false,
-                'sort' => 50,
-                'description' => 'Обязательна после замены стекла с камерой: без неё системы помощи водителю работают неверно.',
-            ],
             [
                 'name' => 'Выезд мастера по городу',
                 'slug' => 'vyezd-mastera',

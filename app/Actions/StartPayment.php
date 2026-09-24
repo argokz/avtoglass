@@ -6,6 +6,8 @@ use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Payments\PaymentGateway;
+use App\Providers\PaymentServiceProvider;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -19,8 +21,10 @@ class StartPayment
 {
     public function __construct(private readonly PaymentGateway $gateway) {}
 
-    public function handle(Order $order): ?Payment
+    public function handle(Order $order, ?PaymentGateway $gateway = null): ?Payment
     {
+        $gateway ??= $this->gateway;
+
         /*
          * Заказ блокируется на всё время проверки и создания.
          *
@@ -33,7 +37,7 @@ class StartPayment
          * Блокировка именно на заказе, а не на платеже: платежа, из-за
          * которого всё и ломается, в этот момент ещё не существует.
          */
-        return DB::transaction(function () use ($order) {
+        return DB::transaction(function () use ($order, $gateway) {
             $locked = Order::query()->whereKey($order->getKey())->lockForUpdate()->first();
 
             if ($locked === null || ! $this->isPayable($locked)) {
@@ -45,12 +49,13 @@ class StartPayment
             $pending = $locked->payments()->pending()->latest('id')->first();
 
             if ($pending !== null && $pending->isPayable()
-                && (float) $pending->amount === (float) $locked->total_amount) {
+                && (float) $pending->amount === (float) $locked->total_amount
+                && $pending->provider === $gateway->name()) {
                 return $pending;
             }
 
             return $locked->payments()->create([
-                'provider' => $this->gateway->name(),
+                'provider' => $gateway->name(),
                 'status' => PaymentStatus::Pending,
                 'amount' => $locked->total_amount,
                 'currency' => $locked->currency ?: 'KZT',
@@ -60,7 +65,34 @@ class StartPayment
 
     public function redirectUrl(Payment $payment): ?string
     {
-        return $this->gateway->redirectUrl($payment);
+        return PaymentServiceProvider::driver($payment->provider)->redirectUrl($payment);
+    }
+
+    /**
+     * Создать платёж и вернуть адрес кассы. null — платить сейчас нельзя.
+     */
+    public function begin(Order $order, ?string $driver = null): ?string
+    {
+        $gateway = $driver ? PaymentServiceProvider::driver($driver) : $this->gateway;
+        $payment = $this->handle($order, $gateway);
+
+        return $payment ? $gateway->redirectUrl($payment) : null;
+    }
+
+    /** После заявки: карта — сразу в Halyk, иначе страница «спасибо». */
+    public function redirectAfterOrder(Order $order): RedirectResponse
+    {
+        session(['last_order_number' => $order->number]);
+
+        if ($order->wantsCardPayment()) {
+            $url = $this->begin($order, 'halyk');
+
+            if ($url !== null) {
+                return redirect()->away($url);
+            }
+        }
+
+        return redirect()->route('order.thanks');
     }
 
     /** Платить можно за живой заказ с посчитанной суммой и без уже прошедшей оплаты. */

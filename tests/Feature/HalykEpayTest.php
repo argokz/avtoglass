@@ -63,13 +63,14 @@ class HalykEpayTest extends TestCase
         $auth = $this->gateway->authorize($payment);
 
         $this->assertSame('ABC123', $auth['token']);
+        $this->assertMatchesRegularExpression('/^\d{15}$/', $auth['invoice_id']);
 
-        Http::assertSent(function ($request) use ($payment) {
+        Http::assertSent(function ($request) use ($auth) {
             $data = $request->data();
 
             return $data['grant_type'] === 'client_credentials'
                 && $data['terminal'] === config('payments.halyk.terminal')
-                && $data['invoiceID'] === $this->gateway->invoiceId($payment)
+                && $data['invoiceID'] === $auth['invoice_id']
                 // Банк принимает сумму целым числом
                 && $data['amount'] === 27000
                 && $data['currency'] === 'KZT'
@@ -77,15 +78,23 @@ class HalykEpayTest extends TestCase
         });
     }
 
-    /** Номер счёта для банка — 6–15 цифр, и по нему платёж находится обратно. */
-    public function test_номер_счёта_дополняется_до_шести_цифр(): void
+    /**
+     * Песочница общая: короткий id платежа там уже занят, касса отвечает
+     * «время оплаты истекло». Номер счёта должен быть 15 цифр и не совпадать
+     * с id, а повторный токен — брать новый номер.
+     */
+    public function test_номер_счёта_не_повторяет_короткий_id_платежа(): void
     {
+        Http::fake(['*' => Http::response(['access_token' => 'T'], 200)]);
+
         $payment = $this->payment();
+        $first = $this->gateway->authorize($payment);
+        $second = $this->gateway->authorize($payment->fresh());
 
-        $invoice = $this->gateway->invoiceId($payment);
-
-        $this->assertSame(6, strlen($invoice));
-        $this->assertSame((int) $payment->id, (int) $invoice);
+        $this->assertMatchesRegularExpression('/^\d{15}$/', $first['invoice_id']);
+        $this->assertNotSame(str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT), $first['invoice_id']);
+        $this->assertNotSame($first['invoice_id'], $second['invoice_id']);
+        $this->assertSame($second['invoice_id'], $this->gateway->invoiceId($payment->fresh()));
     }
 
     /** Молчаливый провал означал бы пустую страницу вместо формы карты. */
@@ -105,7 +114,28 @@ class HalykEpayTest extends TestCase
         $this->get(route('payment.halyk', $payment))
             ->assertOk()
             ->assertSee('27 000')
-            ->assertSee('payment-api.js', false);
+            ->assertSee('4405 6397 0401 5096')
+            ->assertSee('test-epay.epayment.kz', false)
+            ->assertSee('payment-api.js', false)
+            ->assertSee('ABC123', false);
+    }
+
+    public function test_колбэк_находит_платёж_по_выданному_номеру_счёта(): void
+    {
+        Http::fake(['*' => Http::response(['access_token' => 'T'], 200)]);
+
+        $payment = $this->payment(27000);
+        $auth = $this->gateway->authorize($payment);
+
+        $this->postJson(route('payment.halyk.callback'), [
+            'code' => 'ok',
+            'id' => 'halyk-tx-minted',
+            'invoiceId' => $auth['invoice_id'],
+            'amount' => 27000,
+            'secret_hash' => $this->secretHash($payment),
+        ])->assertOk()->assertJson(['status' => 'ok']);
+
+        $this->assertSame('halyk-tx-minted', $payment->fresh()->external_id);
     }
 
     public function test_при_недоступной_кассе_клиента_не_бросают_на_пустой_странице(): void
@@ -241,6 +271,44 @@ class HalykEpayTest extends TestCase
     public function test_песочница_включена_по_умолчанию(): void
     {
         $this->assertTrue((bool) config('payments.halyk.test_mode'));
-        $this->assertStringContainsString('test-epay', $this->gateway->widgetScript());
+        $this->assertSame(
+            'https://test-epay.epayment.kz/payform/payment-api.js',
+            $this->gateway->widgetScript()
+        );
+    }
+
+    public function test_возврат_без_id_операции_не_ходит_в_банк(): void
+    {
+        Http::fake();
+
+        $payment = $this->payment();
+        $payment->update(['external_id' => null]);
+
+        $this->assertFalse($this->gateway->refund($payment));
+        Http::assertNothingSent();
+    }
+
+    public function test_возврат_отправляет_сумму_в_операцию_банка(): void
+    {
+        Http::fake([
+            '*/oauth2/token' => Http::response(['access_token' => 'tok']),
+            '*/operation/*/refund' => Http::response(['status' => 'ok']),
+        ]);
+
+        $payment = $this->payment(27000);
+        $payment->update(['external_id' => 'trx-9']);
+
+        $this->assertTrue($this->gateway->refund($payment));
+
+        Http::assertSent(function ($request) use ($payment) {
+            if (! str_contains($request->url(), '/operation/trx-9/refund')) {
+                return false;
+            }
+
+            $data = $request->data();
+
+            return ($data['amount'] ?? null) === 27000
+                && ($data['externalID'] ?? null) === (string) $payment->id;
+        });
     }
 }

@@ -6,7 +6,9 @@ use App\Enums\GlassType;
 use App\Models\CarBrand;
 use App\Models\CarModel;
 use App\Models\Fitment;
+use App\Models\Offer;
 use App\Models\Product;
+use App\Models\Service;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -23,6 +25,10 @@ class CatalogTest extends TestCase
             'product_id' => $product->id,
             'car_model_id' => $model->id,
         ]);
+
+        // На витрине не бывает товара без предложения из прайса, и поиск
+        // ищет именно по предложениям — без него товар не найдётся вовсе.
+        Offer::factory()->create(['product_id' => $product->id]);
 
         return $product;
     }
@@ -44,7 +50,83 @@ class CatalogTest extends TestCase
 
         $this->get('/')
             ->assertOk()
-            ->assertSee('Toyota');
+            ->assertSee('Toyota')
+            ->assertSee('Стекло на какую машину?')
+            ->assertSee('Войти')
+            ->assertSee(route('account.login'), false)
+            ->assertSee('images/logo.png', false);
+    }
+
+    /**
+     * Цены на работы стоят на главной, а не прячутся за «уточняйте
+     * по телефону»: это первый вопрос покупателя, и человек, получивший
+     * ответ до звонка, звонит уже готовым покупать.
+     */
+    public function test_главная_показывает_цены_на_работы(): void
+    {
+        Service::factory()->create([
+            'name' => 'Установка лобового стекла',
+            'price' => 15000,
+            'is_active' => true,
+        ]);
+
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('Работы и цены')
+            ->assertSee('Установка лобового стекла')
+            ->assertSee('15 000 ₸');
+    }
+
+    /** Выключенная работа на витрину не попадает. */
+    public function test_выключенная_работа_на_главной_не_показывается(): void
+    {
+        Service::factory()->create([
+            'name' => 'Снятие тонировки',
+            'is_active' => false,
+        ]);
+
+        $this->get('/')->assertOk()->assertDontSee('Снятие тонировки');
+    }
+
+    /** Счётчики на главной склоняются: «1 модель», а не «1 моделей». */
+    public function test_счётчики_на_главной_склоняются(): void
+    {
+        $brand = CarBrand::factory()->visible()->create(['models_count' => 1]);
+        CarModel::factory()->for($brand, 'brand')->create(['products_count' => 1]);
+
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('1 модель')
+            ->assertDontSee('1 моделей');
+    }
+
+    public function test_главная_не_обещает_наличие_пока_тумблер_выключен(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertDontSee('в наличии и под заказ')
+            ->assertSee('Наличие и срок подтверждает менеджер');
+    }
+
+    public function test_тип_стекла_с_главной_ведёт_в_каталог(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('type=windshield', false)
+            ->assertSee('Лобовые');
+    }
+
+    public function test_каталог_протаскивает_тип_стекла_до_модели(): void
+    {
+        $model = $this->camry();
+
+        $this->get(route('catalog.brands', ['type' => 'windshield']))
+            ->assertOk()
+            ->assertSee('лобовое стекло');
+
+        $this->get(route('catalog.models', ['brand' => $model->brand, 'type' => 'windshield']))
+            ->assertOk()
+            ->assertSee('type=windshield', false);
     }
 
     public function test_страница_модели_показывает_подходящее_стекло(): void
@@ -111,6 +193,27 @@ class CatalogTest extends TestCase
             ->assertSee('Стекло с кодом');
     }
 
+    public function test_поиск_находит_по_модели_и_названию(): void
+    {
+        $model = $this->camry();
+        $this->glassFor($model, ['name' => 'Лобовое стекло Toyota Camry']);
+
+        $this->get('/search?q=Camry')
+            ->assertOk()
+            ->assertSee('Лобовое стекло Toyota Camry')
+            ->assertSee('Модели')
+            ->assertSee(route('catalog.products', [$model->brand, $model]), false);
+    }
+
+    public function test_пустой_поиск_предлагает_подбор(): void
+    {
+        $this->get('/search?q=неттакогостеклаxyz')
+            ->assertOk()
+            ->assertSee('Ничего не нашлось')
+            ->assertSee('Заявка на подбор')
+            ->assertSee('Подбор по VIN');
+    }
+
     /** На однобуквенный запрос нельзя отдавать весь каталог. */
     public function test_слишком_короткий_запрос_ничего_не_ищет(): void
     {
@@ -146,6 +249,17 @@ class CatalogTest extends TestCase
             ->assertRedirect('/catalog/toyota/camry');
     }
 
+    public function test_подбор_с_годом_ведёт_на_страницу_модели_с_годом(): void
+    {
+        $model = $this->camry();
+
+        $this->post('/pick', [
+            'brand' => $model->car_brand_id,
+            'model' => $model->id,
+            'year' => 2018,
+        ])->assertRedirect('/catalog/toyota/camry?year=2018');
+    }
+
     public function test_подбор_без_модели_ведёт_на_страницу_марки(): void
     {
         $model = $this->camry();
@@ -173,5 +287,16 @@ class CatalogTest extends TestCase
         $this->get("/tovar/{$product->slug}")->assertOk();
 
         $this->assertSame(1, $product->fresh()->views);
+    }
+
+    public function test_карточка_отдаёт_разметку_товара_для_поиска(): void
+    {
+        $product = Product::factory()->create(['name' => 'Лобовое стекло Camry', 'eurocode' => '7260AGNGYV']);
+
+        $this->get(route('catalog.product', $product))
+            ->assertOk()
+            ->assertSee('"@type":"Product"', false)
+            ->assertSee('7260AGNGYV')
+            ->assertSee('PreOrder');
     }
 }

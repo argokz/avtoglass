@@ -20,6 +20,29 @@
         </x-filament::button>
     </div>
 
+    {{-- Сколько денег на курьере прямо сейчас.
+
+         Показываем, но сдать отсюда нельзя: принимает кассир в офисе,
+         и вторая подпись обязана быть чужой. Курьеру эта цифра нужна,
+         чтобы знать, сколько пересчитывать на сдаче, а не узнавать
+         сумму от кассира. --}}
+    @if ($this->cashOnHand > 0)
+        <div class="flex items-center justify-between gap-3 rounded-xl bg-amber-50 p-3.5
+                    ring-1 ring-amber-200 dark:bg-amber-950/40 dark:ring-amber-900">
+            <div>
+                <div class="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    У вас на руках
+                </div>
+                <div class="text-xs text-amber-700 dark:text-amber-300/80">
+                    Сдать в офисе — примет кассир
+                </div>
+            </div>
+            <div class="text-2xl font-bold whitespace-nowrap text-amber-900 dark:text-amber-100">
+                {{ number_format($this->cashOnHand, 0, ',', ' ') }} ₸
+            </div>
+        </div>
+    @endif
+
     {{-- Реестр печатают перед выездом: по нему получают стекло со склада
          и собирают подписи клиентов. --}}
     @if ($this->assignments->isNotEmpty())
@@ -97,7 +120,7 @@
 
             @php $outstanding = $order->outstanding(); @endphp
 
-            @if ($outstanding > 0.01 && ! $done)
+            @if ($outstanding > 0.01 && ! $done && settings()->enabled('cash_in_field'))
                 {{-- Курьер должен видеть, сколько брать, до того как позвонит
                      в дверь: пересчитывать на пороге неудобно и стыдно. --}}
                 <div class="mt-4 rounded-lg border border-warning-300 bg-warning-50 p-3
@@ -119,7 +142,7 @@
                         </x-filament::button>
                     </form>
                 </div>
-            @elseif (! $done)
+            @elseif (! $done && settings()->enabled('cash_in_field'))
                 <div class="mt-4 text-sm font-semibold text-success-600 dark:text-success-400">
                     Заказ оплачен — деньги брать не нужно
                 </div>

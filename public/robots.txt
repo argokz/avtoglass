@@ -1,2 +1,6 @@
 User-agent: *
-Disallow:
+Disallow: /admin
+Disallow: /naryad
+Disallow: /korzina
+Disallow: /oplata
+Sitemap: /sitemap.xml

@@ -12,10 +12,17 @@
             {{ number_format((float) $payment->amount, 0, ',', ' ') }} ₸
         </div>
 
+        <p class="mt-2 text-sm text-muted">Halyk Pay — заполните карту в окне банка</p>
+
         @if (config('payments.halyk.test_mode'))
-            <p class="mt-3 rounded-pill bg-warn-soft px-3 py-1.5 text-xs font-semibold text-warn-ink">
-                Тестовый терминал банка — деньги не списываются
-            </p>
+            <div class="mt-4 rounded-2xl bg-warn-soft p-3.5 text-left text-xs leading-relaxed text-warn-ink">
+                <p class="font-bold">Тестовый терминал — деньги не списываются</p>
+                <p class="mt-2 font-mono text-[13px] text-ink">
+                    4405 6397 0401 5096<br>
+                    срок 01/27 · CVC 321
+                </p>
+                <p class="mt-2 text-muted">Карта из песочницы Halyk. 3-D Secure банк спросит сам.</p>
+            </div>
         @endif
 
         {{-- Форму карты рисует банк, внутри своего фрейма: номер карты
@@ -23,7 +30,7 @@
         <div id="halyk-status" class="mt-6 text-sm text-muted">Открываем форму оплаты…</div>
 
         <button id="halyk-retry" hidden
-                class="mt-4 w-full rounded-xl bg-brand py-3.5 font-bold text-on-brand transition hover:bg-brand-hover">
+                class="btn btn-primary mt-4 w-full !rounded-2xl">
             Открыть форму оплаты
         </button>
 
@@ -37,29 +44,53 @@
 @endsection
 
 @push('scripts')
-<script src="{{ $script }}"></script>
-<script>
-    (function () {
-        var payload = @json($payload);
-        var status = document.getElementById('halyk-status');
-        var retry = document.getElementById('halyk-retry');
+    <script>
+        (function () {
+            var payload = @json($payload);
+            var scriptSrc = @json($script);
+            var status = document.getElementById('halyk-status');
+            var retry = document.getElementById('halyk-retry');
 
-        function start() {
-            // Виджет грузится с домена банка. Если его заблокировали
-            // расширением или сетью, объекта halyk просто не будет —
-            // клиенту надо сказать об этом, а не оставлять пустой экран.
-            if (typeof halyk === 'undefined' || typeof halyk.pay !== 'function') {
+            function fail() {
                 status.textContent = 'Не удалось загрузить форму оплаты. Проверьте блокировщик рекламы или попробуйте другой браузер.';
-                return;
+                retry.hidden = false;
             }
 
-            status.textContent = 'Форма оплаты открыта в отдельном окне.';
-            retry.hidden = false;
-            halyk.pay(payload);
-        }
+            function start() {
+                if (typeof halyk === 'undefined' || typeof halyk.pay !== 'function') {
+                    fail();
+                    return;
+                }
 
-        retry.addEventListener('click', start);
-        window.addEventListener('load', start);
-    })();
-</script>
+                status.textContent = 'Переходим на страницу банка…';
+                retry.hidden = false;
+                halyk.pay(payload);
+            }
+
+            function loadScript() {
+                if (typeof halyk !== 'undefined' && typeof halyk.pay === 'function') {
+                    start();
+                    return;
+                }
+
+                status.textContent = 'Открываем форму оплаты…';
+                retry.hidden = true;
+
+                var previous = document.getElementById('halyk-widget-src');
+                if (previous) {
+                    previous.remove();
+                }
+
+                var script = document.createElement('script');
+                script.id = 'halyk-widget-src';
+                script.src = scriptSrc;
+                script.onload = start;
+                script.onerror = fail;
+                document.head.appendChild(script);
+            }
+
+            retry.addEventListener('click', loadScript);
+            loadScript();
+        })();
+    </script>
 @endpush

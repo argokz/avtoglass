@@ -11,6 +11,8 @@ enum OrderSource: string
     case Phone = 'phone';
     case WhatsApp = 'whatsapp';
     case Booking = 'booking';      // клиент сам выбрал время на сайте
+    case Wholesale = 'wholesale';  // спецификация оптовика: много позиций, без корзины
+    case Assistant = 'assistant';  // диалог с AI-помощником
     case Manual = 'manual';       // менеджер завёл руками
 
     public function label(): string
@@ -22,7 +24,21 @@ enum OrderSource: string
             self::Phone => 'Телефон',
             self::WhatsApp => 'WhatsApp',
             self::Booking => 'Онлайн-запись',
+            self::Wholesale => 'Оптовая заявка',
+            self::Assistant => 'AI-помощник',
             self::Manual => 'Заведён вручную',
+        };
+    }
+
+    public function color(): string
+    {
+        return match ($this) {
+            self::Booking => 'success',
+            self::WhatsApp => 'info',
+            self::Cart => 'primary',
+            self::Wholesale => 'warning',
+            self::Assistant => 'info',
+            default => 'gray',
         };
     }
 

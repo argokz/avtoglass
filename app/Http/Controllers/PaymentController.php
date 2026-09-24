@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Actions\ApplyPaymentCallback;
 use App\Actions\StartPayment;
+use App\Enums\PaymentMethod;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Payments\Gateways\FreedomPayGateway;
 use App\Payments\Gateways\HalykEpayGateway;
 use App\Payments\Gateways\TestGateway;
 use App\Payments\PaymentGateway;
+use App\Providers\PaymentServiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -31,18 +33,12 @@ class PaymentController extends Controller
 
         abort_if($order === null, 404);
 
-        $payment = $this->start->handle($order);
-
-        if ($payment === null) {
-            return redirect()->route('order.thanks')
-                ->with('payment_error', 'Этот заказ сейчас нельзя оплатить онлайн');
-        }
-
-        $url = $this->start->redirectUrl($payment);
+        $driver = $order->payment_method === PaymentMethod::Card ? 'halyk' : null;
+        $url = $this->start->begin($order, $driver);
 
         if ($url === null) {
             return redirect()->route('order.thanks')
-                ->with('payment_error', 'Касса сейчас недоступна, попробуйте позже или оплатите при получении');
+                ->with('payment_error', 'Этот заказ сейчас нельзя оплатить онлайн');
         }
 
         return redirect()->away($url);
@@ -114,13 +110,18 @@ class PaymentController extends Controller
      */
     public function halyk(Payment $payment, ApplyPaymentCallback $apply)
     {
-        abort_unless($this->gateway instanceof HalykEpayGateway, 404);
+        $gateway = PaymentServiceProvider::driver('halyk');
+
+        abort_unless($gateway instanceof HalykEpayGateway, 404);
+        abort_unless($payment->provider === 'halyk', 404);
+
+        $payment->loadMissing('order.customer');
 
         if (! $payment->isPayable()) {
             return redirect()->route('payment.result', $payment);
         }
 
-        $auth = $this->gateway->authorize($payment);
+        $auth = $gateway->authorize($payment);
 
         if ($auth === null) {
             // Банк не выдал токен — платить нечем. Молча показывать пустую
@@ -131,8 +132,8 @@ class PaymentController extends Controller
 
         return view('payment.halyk', [
             'payment' => $payment,
-            'payload' => $this->gateway->widgetPayload($payment, $auth),
-            'script' => $this->gateway->widgetScript(),
+            'payload' => $gateway->widgetPayload($payment, $auth),
+            'script' => $gateway->widgetScript(),
         ]);
     }
 
@@ -142,7 +143,7 @@ class PaymentController extends Controller
      */
     public function halykCallback(Request $request, ApplyPaymentCallback $apply)
     {
-        $result = $this->gateway->parseCallback($request);
+        $result = PaymentServiceProvider::driver('halyk')->parseCallback($request);
 
         if ($result === null) {
             return response()->json(['status' => 'invalid'], Response::HTTP_BAD_REQUEST);

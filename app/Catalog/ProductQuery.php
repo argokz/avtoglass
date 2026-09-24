@@ -19,13 +19,19 @@ class ProductQuery
 {
     public function paginate(ProductFilter $filter, int $perPage = 24): LengthAwarePaginator
     {
-        return $filter->sort
+        $query = $filter->sort
             ->apply($this->build($filter))
             // в списке нужен только счётчик предложений: сами офферы на 24 карточки
-            // это лишние сотни строк
-            ->withCount('offers')
-            ->paginate($perPage)
-            ->withQueryString();
+            // это лишние сотни строк. Опту офферы всё же грузим: иначе
+            // sellingPriceMin сходит в базу на каждую карточку, а пол цены
+            // (не ниже закупа) без оффера не посчитать.
+            ->withCount('offers');
+
+        if (текущийПокупатель()?->seesWholesalePrices()) {
+            $query->with(['offers' => fn ($q) => $q->where('is_active', true)]);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
     /** Сколько товаров каждого типа стекла есть под текущий фильтр — для чипсов. */
@@ -81,6 +87,46 @@ class ProductQuery
                 'suppliers.tier',
                 DB::raw('COUNT(DISTINCT offers.product_id) as total'),
             ]);
+    }
+
+    /**
+     * Сколько карточек с каждой опцией есть под текущий отбор.
+     *
+     * Считаем без уже выбранных опций: иначе нажатый чип остался бы один,
+     * и снять его было бы нечем.
+     *
+     * @return Collection<string,int>
+     */
+    public function countsByOption(ProductFilter $filter): Collection
+    {
+        $without = new ProductFilter(
+            type: $filter->type,
+            options: [],
+            carModelId: $filter->carModelId,
+            year: $filter->year,
+            query: $filter->query,
+            inStockOnly: $filter->inStockOnly,
+            supplierId: $filter->supplierId,
+        );
+
+        $selects = ['COUNT(*) as total'];
+
+        foreach (array_keys(Product::STOREFRONT_OPTIONS) as $flag) {
+            $selects[] = "SUM(CASE WHEN {$flag} THEN 1 ELSE 0 END) as {$flag}";
+        }
+
+        $row = $this->build($without)
+            ->reorder()
+            ->selectRaw(implode(', ', $selects))
+            ->first();
+
+        $counts = collect();
+
+        foreach (array_keys(Product::STOREFRONT_OPTIONS) as $flag) {
+            $counts[$flag] = (int) ($row?->{$flag} ?? 0);
+        }
+
+        return $counts;
     }
 
     /**
@@ -156,18 +202,39 @@ class ProductQuery
         }
 
         if ($filter->query !== null) {
-            $operator = $this->likeOperator();
+            $cleanQuery = trim($filter->query);
 
-            $query->where(function (Builder $q) use ($filter, $operator) {
-                $term = '%'.$filter->query.'%';
+            if (DB::getDriverName() === 'pgsql') {
+                $query->where(function (Builder $q) use ($cleanQuery) {
+                    $term = '%'.$cleanQuery.'%';
+                    $q->where('eurocode', 'ILIKE', $term)
+                        ->orWhere('oem_code', 'ILIKE', $term)
+                        ->orWhere('internal_code', 'ILIKE', $term)
+                        ->orWhere('name', 'ILIKE', $term)
+                        ->orWhereRaw('name % ?', [$cleanQuery])
+                        ->orWhereRaw('similarity(name, ?) > 0.20', [$cleanQuery])
+                        ->orWhereHas('fitments.carModel', function ($modelQ) use ($cleanQuery) {
+                            $modelQ->whereRaw('name % ?', [$cleanQuery])
+                                ->orWhere('name', 'ILIKE', '%'.$cleanQuery.'%')
+                                ->orWhere('name_ru', 'ILIKE', '%'.$cleanQuery.'%');
+                        })
+                        ->orWhereHas('fitments.carModel.brand', function ($brandQ) use ($cleanQuery) {
+                            $brandQ->whereRaw('name % ?', [$cleanQuery])
+                                ->orWhere('name', 'ILIKE', '%'.$cleanQuery.'%')
+                                ->orWhere('name_ru', 'ILIKE', '%'.$cleanQuery.'%');
+                        });
+                });
+            } else {
+                $operator = $this->likeOperator();
+                $term = '%'.$cleanQuery.'%';
 
-                // Еврокод покупатели вводят прямо с наклейки на стекле — это самый
-                // точный способ попасть в товар, поэтому он в поиске равноправен с именем.
-                $q->where('eurocode', $operator, $term)
-                    ->orWhere('oem_code', $operator, $term)
-                    ->orWhere('internal_code', $operator, $term)
-                    ->orWhere('name', $operator, $term);
-            });
+                $query->where(function (Builder $q) use ($term, $operator) {
+                    $q->where('eurocode', $operator, $term)
+                        ->orWhere('oem_code', $operator, $term)
+                        ->orWhere('internal_code', $operator, $term)
+                        ->orWhere('name', $operator, $term);
+                });
+            }
         }
 
         return $query;

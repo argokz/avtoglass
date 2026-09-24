@@ -43,6 +43,30 @@ class Service extends Model
     }
 
     /**
+     * Длительность словами: «2 ч», «1 ч 30 мин», «45 мин».
+     *
+     * Покупателю нужно понять, уедет он сегодня или оставит машину, а «120»
+     * в графе «минут» этого не сообщает — он считает в уме.
+     */
+    public function humanDuration(): ?string
+    {
+        $minutes = (int) $this->duration_minutes;
+
+        if ($minutes <= 0) {
+            return null;
+        }
+
+        if ($minutes < 60) {
+            return $minutes.' мин';
+        }
+
+        $hours = intdiv($minutes, 60);
+        $rest = $minutes % 60;
+
+        return $rest === 0 ? $hours.' ч' : $hours.' ч '.$rest.' мин';
+    }
+
+    /**
      * Работы, применимые к этому стеклу.
      *
      * Работа без указанного типа стекла подходит к любому — так задают выезд
@@ -83,5 +107,14 @@ class Service extends Model
             'price' => $this->price,
             'quantity' => 1,
         ];
+    }
+
+    /** Выезд мастера — отдельная работа, не установка. */
+    public static function visitFee(): ?self
+    {
+        return static::query()
+            ->active()
+            ->where('slug', 'vyezd-mastera')
+            ->first();
     }
 }

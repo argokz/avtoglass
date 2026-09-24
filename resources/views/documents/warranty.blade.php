@@ -64,7 +64,7 @@
 
 <div class="note">
     Гарантия действует при предъявлении этого талона и документа об оплате.
-    По гарантийным вопросам: @foreach (config('company.phones') as $phone){{ $phone['display'] }}@if (! $loop->last), @endif @endforeach
+    По гарантийным вопросам: @foreach (settings()->phones() as $phone){{ $phone['display'] }}@if (! $loop->last), @endif @endforeach
 </div>
 
 <div class="sign">

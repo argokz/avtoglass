@@ -6,7 +6,11 @@ use App\Enums\OrderStatus;
 use App\Enums\TaskStatus;
 use App\Filament\Resources\Orders\OrderResource;
 use App\Filament\Resources\Tasks\TaskResource;
+use App\Filament\Widgets\CatalogGaps;
+use App\Filament\Widgets\LaunchReadiness;
+use App\Filament\Widgets\RevenueChart;
 use App\Filament\Widgets\SalesFunnel;
+use App\Filament\Widgets\SalesStats;
 use App\Filament\Widgets\UrgentWork;
 use App\Models\Order;
 use App\Models\Task;
@@ -66,6 +70,31 @@ class CrmAdminTest extends TestCase
             ->assertOk()
             ->assertSee('Новая')
             ->assertDontSee('Выполнен');
+    }
+
+    /**
+     * Виджеты на инфопанели грузятся лениво, и упавший показывает не ошибку,
+     * а вечный «загружаем» — в браузере это выглядит как подвисшая страница.
+     * Поэтому рендер каждого проверяем здесь, а не глазами.
+     */
+    public function test_все_виджеты_инфопанели_рендерятся(): void
+    {
+        $widgets = [
+            LaunchReadiness::class,
+            UrgentWork::class,
+            SalesFunnel::class,
+            SalesStats::class,
+            RevenueChart::class,
+            CatalogGaps::class,
+        ];
+
+        $admin = User::factory()->admin()->create();
+
+        foreach ($widgets as $widget) {
+            Livewire::actingAs($admin)
+                ->test($widget)
+                ->assertOk();
+        }
     }
 
     public function test_виджет_срочного_показывает_просроченные(): void

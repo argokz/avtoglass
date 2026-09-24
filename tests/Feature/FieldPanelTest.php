@@ -46,6 +46,13 @@ class FieldPanelTest extends TestCase
             ->assertOk();
     }
 
+    public function test_курьер_открывает_профиль_для_2fa(): void
+    {
+        $this->actingAs(User::factory()->courier()->create())
+            ->get('/naryad/profile')
+            ->assertOk();
+    }
+
     public function test_установщик_попадает_в_полевую_панель(): void
     {
         $this->actingAs(User::factory()->role(UserRole::Installer)->create())

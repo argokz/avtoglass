@@ -14,3 +14,7 @@ Artisan::command('inspire', function () {
  * каждая висящая бронь показывает витрине товар как отсутствующий.
  */
 Schedule::command('stock:release-expired')->hourly();
+Schedule::command('sitemap:generate')->daily();
+
+Schedule::command('ordering:prune-idempotency')->hourly()
+    ->when(fn () => config('ordering.api_enabled'))->withoutOverlapping(10);

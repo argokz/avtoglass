@@ -43,7 +43,7 @@
         <td class="right bold" style="width:200px">Итого:</td>
         <td class="right bold" style="width:110px">{{ number_format((float) $order->total_amount, 2, ',', ' ') }} ₸</td>
     </tr>
-    @if (! config('company.requisites.vat_payer'))
+    @if (! settings()->requisites()['vat_payer'])
         <tr><td colspan="3" class="right small muted">Без НДС</td></tr>
     @endif
 </table>

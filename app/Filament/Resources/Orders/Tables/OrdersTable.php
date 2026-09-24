@@ -3,11 +3,13 @@
 namespace App\Filament\Resources\Orders\Tables;
 
 use App\Actions\AcceptCashPayment;
+use App\Actions\RefundPayment;
 use App\Enums\AssignmentType;
 use App\Enums\DocumentType;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentStatus;
 use App\Logistics\Scheduler;
 use App\Models\Order;
 use App\Models\ServicePoint;
@@ -44,13 +46,27 @@ class OrdersTable
                     ->label('Номер')
                     ->searchable()
                     ->weight('bold')
-                    ->description(fn (Order $r) => $r->source->label()),
+                    ->icon(fn (Order $r) => $r->source === OrderSource::Booking ? 'heroicon-o-calendar-days' : null)
+                    ->description(fn (Order $r) => $r->source === OrderSource::Booking && $r->scheduled_at
+                        ? 'Запись '.$r->scheduled_at->format('d.m H:i')
+                        : $r->source->label()),
+
+                TextColumn::make('source')
+                    ->label('Откуда')
+                    ->badge()
+                    ->formatStateUsing(fn (OrderSource $state) => $state->label())
+                    ->color(fn (OrderSource $state) => $state->color())
+                    ->toggleable(),
 
                 TextColumn::make('customer.name')
                     ->label('Клиент')
                     ->searchable()
                     ->description(fn (Order $r) => $r->customer->phone)
                     ->url(fn (Order $r) => 'tel:'.$r->customer->phone),
+
+                TextColumn::make('city')
+                    ->label('Город')
+                    ->toggleable(),
 
                 TextColumn::make('status')
                     ->label('Статус')
@@ -190,6 +206,29 @@ class OrdersTable
                                 ? 'Оплата принята'
                                 : 'Сумма больше остатка по заявке')
                             ->status($payment ? 'success' : 'danger')
+                            ->send();
+                    }),
+
+                Action::make('refund')
+                    ->label('Вернуть оплату')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Вернуть оплату?')
+                    ->modalDescription('Деньги уйдут обратно через кассу (если платили онлайн). В заявке платёж станет «возвращён» только после ответа банка. При включённой фискализации уйдёт чек возврата в ОФД.')
+                    ->visible(fn (Order $r) => $r->payments()->where('status', PaymentStatus::Succeeded)->exists())
+                    ->action(function (Order $record) {
+                        $payment = $record->payments()
+                            ->where('status', PaymentStatus::Succeeded)
+                            ->latest('id')
+                            ->first();
+
+                        $ok = $payment && app(RefundPayment::class)->handle($payment);
+
+                        Notification::make()
+                            ->title($ok ? 'Оплата возвращена' : 'Возврат не выполнен')
+                            ->body($ok ? null : 'Касса не приняла возврат. Статус в заявке не меняли.')
+                            ->status($ok ? 'success' : 'danger')
                             ->send();
                     }),
 

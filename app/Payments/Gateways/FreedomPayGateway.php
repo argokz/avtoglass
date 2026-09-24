@@ -201,4 +201,53 @@ class FreedomPayGateway implements PaymentGateway
 
         return array_map('strval', (array) $xml);
     }
+
+    public function refund(Payment $payment): bool
+    {
+        $paymentId = $payment->external_id;
+
+        if (! filled($paymentId)) {
+            Log::warning('FreedomPay: возврат без pg_payment_id', ['payment_id' => $payment->id]);
+
+            return false;
+        }
+
+        $params = [
+            'pg_merchant_id' => (string) config('payments.freedompay.merchant_id'),
+            'pg_payment_id' => (string) $paymentId,
+            'pg_refund_amount' => number_format((float) $payment->amount, 2, '.', ''),
+            'pg_salt' => Str::random(16),
+        ];
+        $params['pg_sig'] = $this->sign('revoke.php', $params);
+
+        try {
+            $response = Http::asForm()
+                ->timeout(20)
+                ->post((string) config('payments.freedompay.revoke_url'), $params);
+        } catch (ConnectionException $e) {
+            Log::warning('Freedom Pay недоступен при возврате', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
+        if (! $response->successful()) {
+            return false;
+        }
+
+        $xml = $this->parseXml($response->body());
+
+        if (($xml['pg_status'] ?? '') !== 'ok') {
+            Log::warning('FreedomPay отказал в возврате', [
+                'payment_id' => $payment->id,
+                'error' => $xml['pg_error_description'] ?? $response->body(),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
 }

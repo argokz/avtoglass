@@ -17,6 +17,10 @@ class ServicePointForm
                     ->required(),
                 TextInput::make('address')
                     ->required(),
+                TextInput::make('city')
+                    ->label('Город')
+                    ->helperText('Витрина показывает пост только в этом городе')
+                    ->maxLength(64),
                 TextInput::make('phone')
                     ->tel(),
                 TextInput::make('bays')

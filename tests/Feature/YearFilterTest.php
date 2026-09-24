@@ -298,7 +298,7 @@ class YearFilterTest extends TestCase
 
         $this->get('/catalog/toyota/camry')
             ->assertOk()
-            ->assertSee('Год выпуска')
+            ->assertSee('Какой год у машины?')
             ->assertSee('2006');
     }
 

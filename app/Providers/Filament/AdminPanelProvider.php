@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\StaffAuth;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -22,11 +23,10 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        return StaffAuth::configure($panel
             ->default()
             ->id('admin')
-            ->path('admin')
-            ->login()
+            ->path('admin'))
             ->brandName('Автостекло — управление')
             // тот же синий, что на витрине: у менеджера и покупателя один продукт
             ->colors([
@@ -41,6 +41,7 @@ class AdminPanelProvider extends PanelProvider
                 'Логистика',
                 'Каталог',
                 'Справочники',
+                'Настройки',
             ])
             ->sidebarCollapsibleOnDesktop()
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')

@@ -28,10 +28,17 @@ class Supplier extends Model
     public function tierLabel(): string
     {
         return match ($this->tier) {
-            'economy' => 'Эконом',
+            'economy' => 'Базовый',
             'premium' => 'Премиум',
             'oem' => 'Оригинал / OEM',
             default => 'Стандарт',
         };
+    }
+
+    public function logoUrl(): ?string
+    {
+        return $this->logo_path
+            ? файлВитрины($this->logo_path)
+            : null;
     }
 }

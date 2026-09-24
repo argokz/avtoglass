@@ -95,6 +95,6 @@ class DocumentController extends Controller
             ->filter()
             ->min();
 
-        return (int) ($fromOffers ?: config('company.warranty_months', 12));
+        return (int) ($fromOffers ?: settings()->warrantyMonths());
     }
 }

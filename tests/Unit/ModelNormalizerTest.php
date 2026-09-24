@@ -331,4 +331,43 @@ class ModelNormalizerTest extends TestCase
             'SL не считается маркой стекла' => ['Mercedes-Benz', 'SL', 'SL'],
         ];
     }
+
+    /**
+     * Одна буква не в той раскладке заводила модель второй карточкой:
+     * «СLK-Class» с кириллической С и «CLK-Class» с латинской жили порознь,
+     * и стёкла к ним лежали в двух кучах. Покупатель находил одну.
+     */
+    #[DataProvider('раскладка')]
+    public function test_кириллица_в_латинском_названии_выправляется(string $raw, string $ожидается): void
+    {
+        $this->assertSame($ожидается, (new ModelNormalizer)->normalize('Mercedes-Benz', $raw)->name);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function раскладка(): array
+    {
+        return [
+            'С вместо C' => ['СLK-Class', 'CLK-Class'],
+            'Н вместо H' => ['НR/V', 'HR/V'],
+            'Х вместо X' => ['Х-Ray', 'X-Ray'],
+            'А вместо A' => ['KА', 'KA'],
+        ];
+    }
+
+    /**
+     * Обратный случай: русское слово с латинской примесью трогать нельзя,
+     * иначе «NEXTстекло» станет нечитаемым «NEXTcтeклo».
+     */
+    public function test_русское_слово_с_латинской_примесью_не_переводится(): void
+    {
+        $name = (new ModelNormalizer)->normalize('ГАЗ', 'NEXTстекло')->name;
+
+        $this->assertStringContainsString('стекло', $name);
+    }
+
+    /** И обычное русское название остаётся русским. */
+    public function test_русское_название_не_латинизируется(): void
+    {
+        $this->assertSame('Веста', (new ModelNormalizer)->normalize('Лада', 'Веста')->name);
+    }
 }

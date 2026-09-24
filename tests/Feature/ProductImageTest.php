@@ -118,4 +118,27 @@ class ProductImageTest extends TestCase
             ->assertOk()
             ->assertSee('Toyota');
     }
+
+    public function test_фото_модели_ведёт_в_хранилище(): void
+    {
+        $model = $this->camry();
+        $model->update(['image_path' => 'models/toyota-camry.jpg']);
+
+        $this->assertStringContainsString('/storage/models/toyota-camry.jpg', $model->imageUrl());
+    }
+
+    /** Силуэт, сохранённый как «фото», на витрине не показываем. */
+    public function test_svg_силуэт_модели_не_считается_фото(): void
+    {
+        $model = $this->camry();
+        $model->update(['image_path' => 'models/toyota-camry.svg']);
+
+        $this->assertFalse($model->hasPhoto());
+        $this->assertNull($model->imageUrl());
+
+        $this->get(route('catalog.models', $model->brand))
+            ->assertOk()
+            ->assertSee('Camry')
+            ->assertDontSee('/storage/models/toyota-camry.svg', escape: false);
+    }
 }

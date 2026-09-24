@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\FulfillmentType;
-use App\Models\Customer;
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -16,39 +16,31 @@ class StoreOrderRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
-            'name' => ['required', 'string', 'min:2', 'max:120'],
-            'phone' => ['required', 'string', 'max:32'],
-            'comment' => ['nullable', 'string', 'max:2000'],
+        return array_merge(OrderContactRules::fields(), [
+            'form_token' => ['nullable', 'string', 'max:64'],
             'car_info' => ['nullable', 'string', 'max:200'],
             'fulfillment' => ['nullable', Rule::enum(FulfillmentType::class)],
-            'address' => ['nullable', 'string', 'max:255', 'required_if:fulfillment,delivery'],
-            // Ловушка для ботов: настоящий человек это поле не видит и не заполнит
-            'website' => ['prohibited'],
-        ];
+            'payment_method' => ['nullable', Rule::enum(PaymentMethod::class)],
+            'address' => ['nullable', 'string', 'max:255', 'required_if:fulfillment,delivery,visit'],
+            'preferred_date' => ['nullable', 'date', 'after_or_equal:today'],
+            'preferred_time' => ['nullable', 'string', 'max:40'],
+        ]);
     }
 
     public function messages(): array
     {
-        return [
-            'name.required' => 'Как к вам обращаться?',
-            'name.min' => 'Имя слишком короткое',
-            'phone.required' => 'Без телефона мы не сможем перезвонить',
-            'address.required_if' => 'Для доставки нужен адрес',
-            'website.prohibited' => 'Заявка не отправлена',
-        ];
+        return OrderContactRules::messages();
+    }
+
+    public function attributes(): array
+    {
+        return OrderContactRules::attributes();
     }
 
     public function withValidator($validator): void
     {
-        // Телефон проверяем по числу цифр, а не по маске: люди пишут его
-        // десятком разных способов, и отказ из-за скобок раздражает зря.
         $validator->after(function ($validator) {
-            $digits = Customer::normalizePhone($this->input('phone'));
-
-            if ($digits === null || mb_strlen($digits) < 10) {
-                $validator->errors()->add('phone', 'Похоже, в номере не хватает цифр');
-            }
+            OrderContactRules::assertPhone($validator, $this->input('phone'));
         });
     }
 }

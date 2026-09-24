@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Enums\OrderStatus;
 use App\Livewire\CatalogFilters;
 use App\Models\CarBrand;
 use App\Models\CarModel;
 use App\Models\Fitment;
 use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\Supplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,6 +126,32 @@ class CatalogFiltersTest extends TestCase
             ->assertDontSee('Под заказ');
     }
 
+    public function test_зарезервированное_стекло_не_попадает_в_наличие(): void
+    {
+        $free = $this->glass('Свободное');
+        Offer::factory()->create(['product_id' => $free->id, 'stock_qty' => 2]);
+        $free->refreshPricing();
+
+        $held = $this->glass('Уже обещано');
+        $offer = Offer::factory()->create(['product_id' => $held->id, 'stock_qty' => 1]);
+        $held->refreshPricing();
+
+        $order = Order::factory()->create(['total_amount' => 30000]);
+        $order->items()->create([
+            'product_id' => $held->id,
+            'offer_id' => $offer->id,
+            'name' => 'Уже обещано',
+            'price' => 30000,
+            'quantity' => 1,
+        ]);
+        $order->transitionTo(OrderStatus::Confirmed);
+
+        $this->filters()
+            ->call('toggleStock')
+            ->assertSee('Свободное')
+            ->assertDontSee('Уже обещано');
+    }
+
     /** Фильтры складываются: выбрал год, нажал тип — год остаётся. */
     public function test_фильтры_не_сбрасывают_друг_друга(): void
     {
@@ -150,6 +178,17 @@ class CatalogFiltersTest extends TestCase
             ->call('resetFilters')
             ->assertSet('year', '')
             ->assertSee('Лобовое Camry 70');
+    }
+
+    public function test_камера_отсекает_стекло_без_неё(): void
+    {
+        $this->glass('С камерой', ['camera' => true]);
+        $this->glass('Без камеры', ['camera' => false]);
+
+        $this->filters()
+            ->call('toggleOption', 'camera')
+            ->assertSee('С камерой')
+            ->assertDontSee('Без камеры');
     }
 
     // ------------------------------------------------------------------
@@ -263,7 +302,7 @@ class CatalogFiltersTest extends TestCase
         $this->get('/catalog/toyota/camry?year=2008')
             ->assertOk()
             ->assertSee('Лобовое Camry 40')
-            ->assertSee('Год выпуска');
+            ->assertSee('Какой год у машины?');
     }
 
     /** Состояние берётся из адреса: ссылкой на отфильтрованный список делятся. */

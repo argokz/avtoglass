@@ -7,6 +7,7 @@ use App\Catalog\FitmentYears;
 use App\Catalog\ModelNormalizer;
 use App\Catalog\NormalizedModel;
 use App\Catalog\PublishingGuard;
+use App\Catalog\StockLedger;
 use App\Enums\GlassType;
 use App\Models\CarBrand;
 use App\Models\CarGeneration;
@@ -40,24 +41,26 @@ class BuildCatalog extends Command
 
     /**
      * Поставщики: диалект прайса => как показывать и в какой ценовой класс относить.
-     * markup — наценка от оптовой цены к розничной. Значения предварительные,
-     * их надо заменить на реальные правила ценообразования.
+     *
+     * Наценка везде нулевая: витрина показывает цену из прайса как есть.
+     * Проценты назначаются в карточке поставщика — придумывать их за владельца
+     * нельзя, покупатель видит эти цифры как окончательные.
      */
     private const SUPPLIERS = [
-        'kmk' => ['КМК',        'standard', 35],
-        'sl' => ['SL',         'standard', 35],
-        'spektr' => ['СПЕКТР',     'economy',  40],
-        'bgc' => ['BGC',        'standard', 35],
-        'xyg' => ['XYG',        'premium',  25],
-        'agc' => ['AGC',        'oem',      20],
-        'nordglass' => ['NordGlass',  'premium',  25],
-        'benson' => ['Benson',     'premium',  25],
-        'fuyao' => ['Fuyao',      'premium',  25],
-        'pilkington' => ['Pilkington', 'oem',      20],
-        'bor' => ['BOR',        'standard', 35],
-        'china' => ['Китай',      'economy',  40],
-        'oem' => ['Оригинал',   'oem',      20],
-        'unknown' => ['Не указан',  'standard', 35],
+        'kmk' => ['КМК',        'standard', 0],
+        'sl' => ['SL',         'standard', 0],
+        'spektr' => ['СПЕКТР',     'economy',  0],
+        'bgc' => ['BGC',        'standard', 0],
+        'xyg' => ['XYG',        'premium',  0],
+        'agc' => ['AGC',        'oem',      0],
+        'nordglass' => ['NordGlass',  'premium',  0],
+        'benson' => ['Benson',     'premium',  0],
+        'fuyao' => ['Fuyao',      'premium',  0],
+        'pilkington' => ['Pilkington', 'oem',      0],
+        'bor' => ['BOR',        'standard', 0],
+        'china' => ['Китай',      'economy',  0],
+        'oem' => ['Оригинал',   'oem',      0],
+        'unknown' => ['Не указан',  'standard', 0],
     ];
 
     /**
@@ -117,9 +120,16 @@ class BuildCatalog extends Command
         // Псевдонимы читаем один раз: их десятки, а строк прайса тысячи.
         $this->normalizer = CarModelAlias::normalizer();
 
+        /*
+         * Обычному стеклу марка обязательна: без машины его не подобрать.
+         * А молдинг, клей и полимер — универсальные, марки у них нет и быть
+         * не должно, и раньше они целиком выпадали из каталога: 73 ходовые
+         * позиции лежали в прайсе и не доезжали до витрины.
+         */
         $rows = PriceImportRow::where('price_import_run_id', $run->id)
-            ->whereNotNull('brand_name')
-            ->whereNotNull('glass_type');
+            ->whereNotNull('glass_type')
+            ->where(fn ($q) => $q->whereNotNull('brand_name')
+                ->orWhere('glass_type', GlassType::Consumable->value));
 
         $total = $rows->count();
         $skipped = PriceImportRow::where('price_import_run_id', $run->id)->count() - $total;
@@ -166,7 +176,7 @@ class BuildCatalog extends Command
             if ($product->needs_review) {
                 $stats['review']++;
             }
-        } elseif ($row->status === 'review' && ! $product->needs_review) {
+        } elseif ($this->needsReview($row) && ! $product->needs_review) {
             // карточка уже есть, но эта строка сомнительная — помечаем на проверку
             $product->update(['needs_review' => true, 'is_published' => false]);
         }
@@ -185,6 +195,15 @@ class BuildCatalog extends Command
      */
     private function signature(PriceImportRow $row, array $options): string
     {
+        /*
+         * У расходника без марки все остальные поля пустые, и подпись
+         * получилась бы одна на все семьдесят позиций — они склеились бы
+         * в один товар. Различает их собственное название.
+         */
+        if ($row->brand_name === null && $row->glass_type === GlassType::Consumable->value) {
+            return hash('sha256', 'consumable|'.mb_strtolower(trim((string) $row->raw_name)));
+        }
+
         $parts = [
             mb_strtolower(trim((string) $row->brand_name)),
             mb_strtolower(trim((string) $row->model_name)),
@@ -219,7 +238,7 @@ class BuildCatalog extends Command
     {
         $type = GlassType::from($row->glass_type);
         $name = $this->productName($row, $type, $options);
-        $needsReview = $row->status === 'review';
+        $needsReview = $this->needsReview($row);
 
         return Product::create([
             'signature' => $signature,
@@ -251,6 +270,12 @@ class BuildCatalog extends Command
             default => null,
         };
 
+        // Универсальный расходник называется так, как назван в прайсе:
+        // «Молдинг Транзит Т1» — это и есть товар, разбирать тут нечего.
+        if ($row->brand_name === null && $type === GlassType::Consumable) {
+            return $this->consumableName((string) $row->raw_name);
+        }
+
         $parts = [$type->label(), $side, $row->brand_name, $row->model_name];
 
         if ($row->year_from) {
@@ -269,6 +294,65 @@ class BuildCatalog extends Command
         }
 
         return $short ? $name.' ('.implode(', ', $short).')' : $name;
+    }
+
+    /**
+     * Нужна ли карточке ручная проверка.
+     *
+     * Разбор отправляет строку на проверку, когда не смог узнать марку. Для
+     * молдинга и клея марки нет и быть не должно — сама по себе эта причина
+     * для них не значит ничего, иначе весь раздел расходников уезжает в очередь
+     * разбора и не попадает на витрину.
+     */
+    private function needsReview(PriceImportRow $row): bool
+    {
+        if ($row->status !== 'review') {
+            return false;
+        }
+
+        if ($row->brand_name !== null || $row->glass_type !== GlassType::Consumable->value) {
+            return true;
+        }
+
+        // Расходник без марки: проверяем, есть ли замечания помимо марки и поставщика.
+        $оставшиеся = array_filter(
+            (array) $row->issues,
+            fn ($issue) => ! str_contains((string) $issue, 'Марка')
+                && ! str_contains((string) $issue, 'Поставщик')
+        );
+
+        return $оставшиеся !== [];
+    }
+
+    /**
+     * Имя расходника из строки прайса.
+     *
+     * В прайсе они идут с внутренним номером: «001-Молдинг "Универсальный" У1».
+     * Номер нужен кладовщику, а покупателю он только мешает читать.
+     */
+    private function consumableName(string $raw): string
+    {
+        $name = trim($raw);
+        $name = preg_replace('/^\d{1,4}\s*[-–—]\s*/u', '', $name) ?? $name;
+
+        /*
+         * Кавычки в прайсе прямые и не всегда парные: «Молдинг "Сиерра 2 (с пазом)».
+         * Ставим ёлочки по очереди — открывающую и закрывающую, — а непарный
+         * остаток убираем совсем: «Лепесток длинный Л4 с одной ёлочкой выглядит
+         * как недописанное название.
+         */
+        $открыта = false;
+        $name = preg_replace_callback('/"/u', function () use (&$открыта) {
+            $открыта = ! $открыта;
+
+            return $открыта ? '«' : '»';
+        }, $name) ?? $name;
+
+        if ($открыта) {
+            $name = str_replace('«', '', $name);
+        }
+
+        return trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
     }
 
     private function uniqueSlug(string $name, string $signature): string
@@ -295,10 +379,17 @@ class BuildCatalog extends Command
 
         if ($row->price !== null) {
             $wholesale = (float) $row->price;
-            $retail = round($wholesale * (1 + (float) $supplier->markup_percent / 100), -1);
+            $markup = (float) $supplier->markup_percent;
 
-            if ($retail < $wholesale) {
-                $retail = ceil($wholesale / 10) * 10;
+            if ($markup <= 0) {
+                // Без наценки цена ровно прайсовая — округлять нечего.
+                $retail = $wholesale;
+            } else {
+                $retail = round($wholesale * (1 + $markup / 100), -1);
+
+                if ($retail < $wholesale) {
+                    $retail = ceil($wholesale / 10) * 10;
+                }
             }
         }
 
@@ -443,33 +534,12 @@ class BuildCatalog extends Command
 
     /**
      * Витринные цены и наличие — одним запросом.
-     * Перебор в PHP на 5000+ карточках даёт десятки тысяч запросов и минуты работы.
      */
     private function refreshPricing(): void
     {
         $this->info('Пересчёт витринных цен...');
 
-        /*
-         * Булевы колонки сравниваем и присваиваем как булевы, а не как 1/0.
-         * SQLite проглотит любой вариант, PostgreSQL — нет: там boolean это
-         * отдельный тип, и «is_active = 1» падает с ошибкой приведения.
-         */
-        DB::statement('
-            UPDATE products SET
-                price_min = (
-                    SELECT MIN(price_retail) FROM offers
-                    WHERE offers.product_id = products.id AND offers.is_active = true
-                ),
-                price_max = (
-                    SELECT MAX(price_retail) FROM offers
-                    WHERE offers.product_id = products.id AND offers.is_active = true
-                ),
-                in_stock = (
-                    SELECT COALESCE(SUM(stock_qty), 0) > 0
-                    FROM offers
-                    WHERE offers.product_id = products.id AND offers.is_active = true
-                )
-        ');
+        app(StockLedger::class)->refreshAllProducts();
 
         $hidden = (new PublishingGuard)->apply();
 

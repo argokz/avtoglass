@@ -33,7 +33,7 @@ class SupplierForm
                     ->required()
                     ->default('standard')
                     ->options([
-                        'economy' => 'Эконом',
+                        'economy' => 'Базовый',
                         'standard' => 'Стандарт',
                         'premium' => 'Премиум',
                         'oem' => 'Оригинал / OEM',
@@ -66,8 +66,10 @@ class SupplierForm
                     ->label('Наценка, %')
                     ->required()
                     ->numeric()
-                    ->default(30)
-                    ->helperText('Из неё считается розничная цена при сборке каталога'),
+                    ->minValue(0)
+                    ->default(0)
+                    ->suffix('%')
+                    ->helperText('Ноль — на витрине цена из прайса как есть. Любое другое число — розница считается от закупки при следующей сборке каталога.'),
 
                 TextInput::make('sort')
                     ->label('Порядок')

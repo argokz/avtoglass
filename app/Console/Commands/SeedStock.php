@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Catalog\StockLedger;
 use App\Enums\GlassType;
 use App\Models\Offer;
 use App\Models\Product;
@@ -96,16 +97,10 @@ class SeedStock extends Command
         return random_int(1, 100) <= 70 ? random_int(1, 2) : random_int(3, 5);
     }
 
-    /** in_stock у карточки — производное от остатков её предложений. */
+    /** in_stock у карточки — производное от свободного остатка её предложений. */
     private function refreshProducts(): void
     {
-        // Булево присваиваем булевым: PostgreSQL не приводит 1/0 к boolean
-        DB::statement('
-            UPDATE products SET in_stock = (
-                SELECT COALESCE(SUM(stock_qty), 0) > 0
-                FROM offers WHERE offers.product_id = products.id AND offers.is_active = true
-            )
-        ');
+        app(StockLedger::class)->refreshAllProducts();
     }
 
     private function report(): void

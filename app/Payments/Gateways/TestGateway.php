@@ -73,4 +73,10 @@ class TestGateway implements PaymentGateway
 
         return hash_hmac('sha256', implode('|', $data), (string) config('payments.secret'));
     }
+
+    public function refund(Payment $payment): bool
+    {
+        // Заглушка денег никуда не отправляла — возвращать в банк нечего.
+        return true;
+    }
 }

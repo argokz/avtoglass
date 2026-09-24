@@ -216,7 +216,10 @@ class DocumentTest extends TestCase
 
     public function test_счёт_показывает_реквизиты_и_сумму(): void
     {
-        config(['company.requisites.bin' => '123456789012']);
+        settings()->save([
+            'bin' => '123456789012',
+            'legal_name' => 'ТОО «АвтостеклоЦентр»',
+        ]);
 
         $this->actingAs($this->manager())
             ->get(route('document.order', [$this->order(45000), 'invoice']))
@@ -229,12 +232,14 @@ class DocumentTest extends TestCase
     /** Без реквизитов счёт юридической силы не имеет — это должно быть видно. */
     public function test_без_реквизитов_документ_помечается(): void
     {
+        settings()->save(['bin' => '']);
         config(['company.requisites.bin' => null]);
 
         $this->actingAs($this->manager())
             ->get(route('document.order', [$this->order(), 'invoice']))
             ->assertOk()
-            ->assertSee('юридической силы он не имеет');
+            ->assertSee('юридической силы он не имеет')
+            ->assertSee('Настройки');
     }
 
     // ------------------------------------------------------------------

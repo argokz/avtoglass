@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Cart\Cart;
 use App\Enums\OrderSource;
+use App\Models\CarModel;
+use App\Models\Fitment;
+use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -161,7 +164,49 @@ class CartTest extends TestCase
         $product = $this->product();
 
         $this->post(route('cart.add', $product), ['go_to_cart' => 1])
-            ->assertRedirect(route('cart.show'));
+            ->assertRedirect(route('cart.show').'#oformlenie')
+            ->assertSessionHas('quick_checkout', true);
+    }
+
+    public function test_в_корзину_оставляет_на_карточке(): void
+    {
+        $product = $this->product();
+
+        $this->from(route('catalog.product', $product))
+            ->post(route('cart.add', $product), ['quantity' => 1])
+            ->assertRedirect(route('catalog.product', $product))
+            ->assertSessionHas('cart_added');
+    }
+
+    public function test_корзина_показывает_широкое_оформление(): void
+    {
+        $this->post(route('cart.add', $this->product()));
+
+        $this->get(route('cart.show'))
+            ->assertOk()
+            ->assertSee('id="oformlenie"', false)
+            ->assertSee('Оформление заказа')
+            ->assertSee('Перейти к оформлению')
+            ->assertSee('form="cart-checkout"', false);
+    }
+
+    public function test_в_корзине_видно_на_какую_машину_стекло(): void
+    {
+        $model = CarModel::factory()->visible()->create(['name' => 'Camry']);
+        $product = $this->product(30000);
+        Fitment::factory()->create([
+            'product_id' => $product->id,
+            'car_model_id' => $model->id,
+        ]);
+
+        $this->post(route('cart.add', $product));
+
+        $this->get(route('cart.show'))
+            ->assertOk()
+            ->assertSee('Автомобиль')
+            ->assertSee($model->brand->name)
+            ->assertSee('Camry')
+            ->assertSee('name="car_info"', false);
     }
 
     public function test_позицию_можно_убрать(): void
@@ -194,10 +239,7 @@ class CartTest extends TestCase
         $this->post(route('cart.add', $first), ['quantity' => 2]);
         $this->post(route('cart.add', $second));
 
-        $this->post(route('cart.checkout'), [
-            'name' => 'Данил',
-            'phone' => '+7 700 123-45-67',
-        ])->assertRedirect(route('order.thanks'));
+        $this->post(route('cart.checkout'), $this->orderPayload())->assertRedirect(route('order.thanks'));
 
         $order = Order::sole();
 
@@ -206,12 +248,42 @@ class CartTest extends TestCase
         $this->assertSame('80000.00', $order->total_amount);
     }
 
+    /**
+     * Город заявки берётся из того, что выбрал покупатель в шапке. У компании
+     * две точки, и без города менеджер не знает, куда клиент приедет — а по
+     * телефону это уже второй звонок.
+     */
+    public function test_город_из_шапки_попадает_в_заявку(): void
+    {
+        settings()->save(['cities' => 'Караганда
+Астана']);
+
+        $product = $this->product(30000);
+
+        $this->post(route('cart.add', $product));
+        $this->withSession(['city' => 'Астана'])
+            ->post(route('cart.checkout'), $this->orderPayload());
+
+        $this->assertSame('Астана', Order::sole()->city);
+    }
+
+    /** Ничего не выбирали — пишем город по умолчанию, а не пустоту. */
+    public function test_без_выбора_города_заявка_получает_город_по_умолчанию(): void
+    {
+        $product = $this->product(30000);
+
+        $this->post(route('cart.add', $product));
+        $this->post(route('cart.checkout'), $this->orderPayload());
+
+        $this->assertSame(settings()->defaultCity(), Order::sole()->city);
+    }
+
     public function test_количество_переносится_в_заказ(): void
     {
         $product = $this->product(30000);
 
         $this->post(route('cart.add', $product), ['quantity' => 3]);
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '+7 700 123-45-67']);
+        $this->post(route('cart.checkout'), $this->orderPayload());
 
         $item = Order::sole()->items()->sole();
 
@@ -225,7 +297,7 @@ class CartTest extends TestCase
         $product = $this->product(30000);
 
         $this->post(route('cart.add', $product));
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '+7 700 123-45-67']);
+        $this->post(route('cart.checkout'), $this->orderPayload());
 
         $product->update(['price_min' => 99000, 'name' => 'Другое имя']);
 
@@ -238,14 +310,14 @@ class CartTest extends TestCase
     public function test_после_оформления_корзина_пуста(): void
     {
         $this->post(route('cart.add', $this->product()));
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '+7 700 123-45-67']);
+        $this->post(route('cart.checkout'), $this->orderPayload());
 
         $this->assertTrue($this->cart()->isEmpty());
     }
 
     public function test_пустую_корзину_не_оформить(): void
     {
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '+7 700 123-45-67'])
+        $this->post(route('cart.checkout'), $this->orderPayload())
             ->assertRedirect(route('cart.show'));
 
         $this->assertSame(0, Order::count());
@@ -256,7 +328,7 @@ class CartTest extends TestCase
     {
         $this->post(route('cart.add', $this->product(30000)));
         $this->post(route('cart.add', $this->product(20000)));
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '+7 700 123-45-67']);
+        $this->post(route('cart.checkout'), $this->orderPayload());
 
         $this->assertSame(1, Order::sole()->tasks()->count());
     }
@@ -265,10 +337,46 @@ class CartTest extends TestCase
     {
         $this->post(route('cart.add', $this->product()));
 
-        $this->post(route('cart.checkout'), ['name' => 'Данил', 'phone' => '123'])
+        $this->post(route('cart.checkout'), $this->orderPayload(['phone' => '123']))
             ->assertSessionHasErrors('phone');
 
         $this->assertSame(0, Order::count());
         $this->assertFalse($this->cart()->isEmpty(), 'корзина не должна очищаться при ошибке');
+    }
+
+    /** F5 / двойной клик на оформлении корзины не создаёт вторую заявку. */
+    public function test_повторный_checkout_с_тем_же_токеном_не_дублирует_заказ(): void
+    {
+        $product = $this->product();
+        $payload = $this->orderPayload(['form_token' => 'tok-cart-1']);
+
+        $this->post(route('cart.add', $product));
+        $this->post(route('cart.checkout'), $payload)
+            ->assertRedirect(route('order.thanks'));
+
+        // Корзина уже пуста — повторный checkout без товара уйдёт на show,
+        // поэтому кладём снова и бьём тем же токеном.
+        $this->post(route('cart.add', $product));
+        $this->post(route('cart.checkout'), $payload)
+            ->assertRedirect(route('order.thanks'))
+            ->assertSessionHas('order_deduped', true);
+
+        $this->assertSame(1, Order::count());
+        $this->assertSame(1, Order::sole()->tasks()->count());
+    }
+
+    public function test_в_заказ_попадает_выбранный_поставщик(): void
+    {
+        $product = $this->product(20000);
+        Offer::factory()->price(20000)->create(['product_id' => $product->id]);
+        $pricey = Offer::factory()->price(60000)->create(['product_id' => $product->id]);
+
+        $this->post(route('cart.add', $product), ['offer_id' => $pricey->id]);
+        $this->post(route('cart.checkout'), $this->orderPayload());
+
+        $item = Order::sole()->items()->whereNotNull('product_id')->sole();
+
+        $this->assertSame($pricey->id, $item->offer_id);
+        $this->assertSame('60000.00', $item->price);
     }
 }

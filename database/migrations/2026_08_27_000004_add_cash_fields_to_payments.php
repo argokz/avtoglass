@@ -31,8 +31,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('payments', function (Blueprint $table) {
-            $table->dropConstrainedForeignKey('received_by');
-            $table->dropConstrainedForeignKey('assignment_id');
+            $table->dropConstrainedForeignId('received_by');
+            $table->dropConstrainedForeignId('assignment_id');
             $table->dropColumn('settled_at');
         });
     }

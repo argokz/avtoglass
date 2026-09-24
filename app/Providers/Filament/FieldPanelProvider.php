@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\StaffAuth;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -27,10 +28,9 @@ class FieldPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        return StaffAuth::configure($panel
             ->id('field')
-            ->path('naryad')
-            ->login()
+            ->path('naryad'))
             ->brandName('Мои наряды')
             ->colors(['primary' => Color::Blue])
             ->font('Inter')

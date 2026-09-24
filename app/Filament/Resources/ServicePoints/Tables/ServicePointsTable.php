@@ -19,6 +19,9 @@ class ServicePointsTable
                     ->searchable(),
                 TextColumn::make('address')
                     ->searchable(),
+                TextColumn::make('city')
+                    ->label('Город')
+                    ->toggleable(),
                 TextColumn::make('phone')
                     ->searchable(),
                 TextColumn::make('bays')

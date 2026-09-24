@@ -7,7 +7,6 @@ use App\Models\CarBrand;
 use App\Models\CarModel;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
-use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
@@ -24,9 +23,16 @@ use Livewire\Component;
  */
 class VinLookup extends Component
 {
-    /** В адресной строке, чтобы результат можно было переслать менеджеру. */
-    #[Url(except: '', history: true)]
+    /**
+     * VIN живёт в состоянии компонента и в сессии, но не в адресной строке:
+     * семнадцать знаков — это персональные данные, и ими не делятся ссылкой.
+     */
     public string $vin = '';
+
+    public function mount(): void
+    {
+        $this->vin = (string) session('vin', '');
+    }
 
     public function updatedVin(): void
     {

@@ -49,6 +49,44 @@ enum OrderStatus: string
         return in_array($this, [self::Completed, self::Cancelled], true);
     }
 
+    /**
+     * Что происходит сейчас — текст для клиента, без внутреннего жаргона CRM.
+     */
+    public function clientHint(): string
+    {
+        return match ($this) {
+            self::New => 'Заявка у менеджера. Обычно перезваниваем в течение рабочего дня.',
+            self::InProgress => 'Уточняем наличие и цену с работой. Дождитесь звонка — писать повторно не нужно.',
+            self::Confirmed => 'Стекло согласовано. Дальше назначим установку или доставку.',
+            self::Scheduled => 'Время назначено. Если планы изменятся — позвоните, освободим слот.',
+            self::Completed => 'Работа выполнена. Сохраните гарантийный талон.',
+            self::Cancelled => 'Заявка отменена. Если стекло ещё нужно — оставьте новую.',
+        };
+    }
+
+    /**
+     * Шаги, которые клиент видит на странице статуса.
+     * Отмена — отдельный конец, в эту цепочку не входит.
+     *
+     * @return list<self>
+     */
+    public static function trackPipeline(): array
+    {
+        return [self::New, self::InProgress, self::Confirmed, self::Scheduled, self::Completed];
+    }
+
+    public function trackIndex(): int
+    {
+        return match ($this) {
+            self::New => 0,
+            self::InProgress => 1,
+            self::Confirmed => 2,
+            self::Scheduled => 3,
+            self::Completed => 4,
+            self::Cancelled => -1,
+        };
+    }
+
     /** В какие статусы можно уйти отсюда. Отмена доступна из любого живого. */
     public function allowedTransitions(): array
     {

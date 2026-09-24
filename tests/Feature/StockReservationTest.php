@@ -303,4 +303,44 @@ class StockReservationTest extends TestCase
         $this->assertSame(0, $offer->fresh()->available());
         $this->assertSame(1, StockReservation::held()->count());
     }
+
+    public function test_карточка_считается_отсутствующей_когда_всё_зарезервировано(): void
+    {
+        $order = $this->orderFor(stock: 1);
+        $product = $this->offerOf($order)->product;
+        $product->refreshPricing();
+
+        $this->assertTrue($product->fresh()->in_stock);
+
+        $order->transitionTo(OrderStatus::Confirmed);
+
+        $this->assertFalse($product->fresh()->in_stock);
+    }
+
+    public function test_списание_последней_единицы_снимает_наличие_с_карточки(): void
+    {
+        $order = $this->orderFor(stock: 1);
+        $product = $this->offerOf($order)->product;
+
+        $order->transitionTo(OrderStatus::Confirmed);
+        $order = $order->fresh();
+        $order->transitionTo(OrderStatus::Scheduled);
+        $order->fresh()->transitionTo(OrderStatus::Completed);
+
+        $this->assertFalse($product->fresh()->in_stock);
+        $this->assertSame(0, (int) $this->offerOf($order)->stock_qty);
+    }
+
+    public function test_снятие_резерва_возвращает_карточку_в_наличие(): void
+    {
+        $order = $this->orderFor(stock: 1);
+        $product = $this->offerOf($order)->product;
+
+        $order->transitionTo(OrderStatus::Confirmed);
+        $this->assertFalse($product->fresh()->in_stock);
+
+        $order->fresh()->transitionTo(OrderStatus::Cancelled);
+
+        $this->assertTrue($product->fresh()->in_stock);
+    }
 }

@@ -2,6 +2,10 @@
 
 @section('title', $product->name)
 @section('description', "{$product->name}. Цены нескольких поставщиков, гарантия, установка и калибровка.")
+@section('body_class', 'has-mobile-cta')
+@if ($product->imageUrl())
+    @section('og_image', url($product->imageUrl()))
+@endif
 
 @section('breadcrumbs')
     <span class="text-line-strong">/</span>
@@ -19,42 +23,85 @@
 
 @section('content')
 
-<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-10">
+@php
+    $productSchema = array_filter([
+        '@context' => 'https://schema.org',
+        '@type' => 'Product',
+        'name' => $product->name,
+        'sku' => $product->eurocode ?: $product->internal_code,
+        'description' => $product->name,
+        'image' => $product->imageUrl() ? url($product->imageUrl()) : null,
+        'offers' => [
+            '@type' => 'AggregateOffer',
+            'priceCurrency' => 'KZT',
+            'lowPrice' => $product->price_min,
+            'highPrice' => $product->price_max ?: $product->price_min,
+            'availability' => settings()->enabled('display_stock') && $product->in_stock
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/PreOrder',
+        ],
+    ]);
+@endphp
+@push('jsonld')
+    <script type="application/ld+json">{!! json_encode($productSchema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
+@endpush
+
+@if (session('cart_added'))
+    @push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            window.toast('Добавлено в корзину', 'ok');
+        });
+    </script>
+    @endpush
+@endif
+
+@php
+    $покупатель = текущийПокупатель();
+    $ценаОт = $product->sellingPriceMin($покупатель);
+    $ценаДо = $product->sellingPriceMax($покупатель);
+    $опт = $покупатель?->seesWholesalePrices() === true;
+@endphp
+
+<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-10">
 
     <div class="min-w-0">
-        <div class="relative grid aspect-video place-items-center overflow-hidden rounded-card
-                    border border-line bg-surface text-line-strong">
-            @if ($product->imageUrl())
-                <img src="{{ $product->imageUrl() }}" alt="{{ $product->name }}"
-                     class="h-full w-full object-contain">
-            @else
-                {{-- Фото у большинства позиций нет: прайсы приходят без картинок.
-                     Значок типа стекла хотя бы отвечает на вопрос «лобовое или боковое». --}}
-                <x-glass-icon :type="$product->glass_type" class="h-full w-full max-h-56 p-10" />
-            @endif
+        @php $машина = $product->fitments->first()?->carModel; @endphp
+        <div class="card relative overflow-hidden !p-0">
+            <div @class(['grid', 'sm:grid-cols-[minmax(0,1fr)_9.5rem]' => (bool) $машина])>
+                @if ($product->imageUrl())
+                    <div class="relative aspect-video grid place-items-center bg-sunken">
+                        <img src="{{ $product->imageUrl() }}" alt="{{ $product->name }}"
+                             class="h-full w-full object-contain">
+                    </div>
+                @else
+                    <x-glass-blueprint :product="$product" class="w-full min-h-[220px] sm:min-h-[280px]" />
+                @endif
 
-            <span class="absolute top-4 left-4 rounded-pill bg-sunken px-3 py-1.5 text-xs font-semibold text-muted">
+                @if ($машина)
+                    <x-car-model-image :model="$машина" :brand="$машина->brand"
+                                       class="h-28 !rounded-none !p-0 border-t border-line sm:h-full sm:border-t-0 sm:border-l" />
+                @endif
+            </div>
+
+            <span class="badge badge-muted absolute top-4 left-4 z-10 !bg-night/90 !text-on-night">
                 {{ $product->glass_type?->label() }}
             </span>
         </div>
 
-        <h1 class="mt-6 text-2xl leading-tight font-bold sm:text-3xl">{{ $product->name }}</h1>
+        <h1 class="mt-6 text-2xl leading-tight font-extrabold sm:text-3xl">{{ $product->name }}</h1>
 
         @if ($options = $product->activeOptions())
             <div class="mt-4 flex flex-wrap gap-2">
                 @foreach ($options as $option)
-                    <span class="rounded-pill bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-ink">
-                        {{ $option }}
-                    </span>
+                    <span class="badge badge-accent">{{ $option }}</span>
                 @endforeach
             </div>
         @endif
 
         @if ($product->camera)
-            {{-- Про калибровку предупреждаем до заказа: это отдельная работа и отдельные
-                 деньги, а без неё системы помощи водителю работают неверно. --}}
             <div class="mt-5 flex gap-3.5 rounded-card border border-warn/40 bg-warn-soft p-4 text-sm text-warn-ink">
-                <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
                 </svg>
                 <p>
@@ -83,13 +130,13 @@
         @endphp
 
         @if ($specs)
-            <section class="mt-8">
-                <h2 class="text-lg font-bold">Характеристики</h2>
-                <dl class="mt-3 grid gap-x-8 sm:grid-cols-2">
+            <section class="reveal mt-8">
+                <h2 class="text-lg font-extrabold">Характеристики</h2>
+                <dl class="card mt-3 grid gap-x-8 !p-0 sm:grid-cols-2 sm:divide-x sm:divide-line">
                     @foreach ($specs as $label => $value)
-                        <div class="flex items-baseline justify-between gap-3 border-b border-line py-2.5 text-sm">
+                        <div class="flex items-baseline justify-between gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0 sm:odd:pr-5 sm:even:pl-5">
                             <dt class="text-muted">{{ $label }}</dt>
-                            <dd class="text-right font-semibold">{{ $value }}</dd>
+                            <dd class="text-right font-bold">{{ $value }}</dd>
                         </div>
                     @endforeach
                 </dl>
@@ -97,124 +144,146 @@
         @endif
 
         @if ($product->fitments->isNotEmpty())
-            <section class="mt-8">
-                <h2 class="text-lg font-bold">Подходит к автомобилям</h2>
+            <section class="reveal mt-8">
+                <h2 class="text-lg font-extrabold">Подходит к автомобилям</h2>
                 <p class="mt-1 text-sm text-muted">
                     Одно стекло встаёт на несколько машин — проверьте свою в списке.
                 </p>
 
-                <ul class="mt-3 grid gap-x-8 sm:grid-cols-2">
+                <ul class="card mt-3 grid !p-0 sm:grid-cols-2 sm:divide-x sm:divide-line">
                     @foreach ($product->fitments as $fitment)
-                        <li class="border-b border-line">
+                        <li class="border-b border-line last:border-b-0">
                             <a href="{{ route('catalog.products', [$fitment->carModel->brand, $fitment->carModel]) }}"
-                               class="flex items-baseline justify-between gap-3 py-2.5 text-sm transition hover:text-brand">
-                                <span class="font-medium">
-                                    {{ $fitment->carModel->brand->name }} {{ $fitment->carModel->name }}
-                                </span>
-                                @if ($fitment->year_from)
-                                    <span class="shrink-0 text-xs whitespace-nowrap text-faint">
-                                        {{ $fitment->year_from }}–{{ $fitment->year_to ?: 'н.в.' }}
+                               class="flex items-center gap-3 px-3 py-2.5 text-sm transition hover:bg-sunken hover:text-brand-ink">
+                                <x-car-model-image :model="$fitment->carModel" :brand="$fitment->carModel->brand"
+                                                   class="h-12 w-20 shrink-0 !p-1 !rounded-xl" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate font-semibold">
+                                        {{ $fitment->carModel->brand->name }} {{ $fitment->carModel->name }}
                                     </span>
-                                @endif
+                                    @if ($fitment->year_from)
+                                        <span class="text-xs text-faint">
+                                            {{ $fitment->year_from }}–{{ $fitment->year_to ?: 'н.в.' }}
+                                        </span>
+                                    @endif
+                                </span>
                             </a>
                         </li>
                     @endforeach
                 </ul>
             </section>
         @endif
+
+        @if ($product->glass_type?->isGlass())
+            <details class="mt-10">
+                <summary class="cursor-pointer text-sm font-bold text-muted hover:text-ink">
+                    Как меняют стекло и что значат маркировки
+                </summary>
+                <div class="mt-4 space-y-6">
+                    <x-infographics.replacement-process />
+                    @if ($product->eurocode)
+                        <x-infographics.glass-markings />
+                    @endif
+                </div>
+            </details>
+        @endif
     </div>
 
-    {{-- Десктоп: блок заказа едет за прокруткой. Телефон: он же внизу экрана. --}}
-    <aside class="lg:sticky lg:top-28 lg:self-start">
-        <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-            @if ($product->price_min)
-                <div class="font-display text-3xl leading-none font-extrabold tracking-tight">
-                    {{ number_format((float) $product->price_min, 0, ',', ' ') }} ₸
+    <aside class="min-w-0 lg:sticky lg:top-28 lg:self-start">
+        <div class="card p-6 shadow-lift">
+                @if ($опт)
+                    <p class="mb-2 text-xs font-bold tracking-wide text-brand-ink uppercase">Оптовая цена</p>
+                @endif
+                @if ($ценаОт)
+                <div class="price price-brand price-lg" data-product-price>
+                    {{ number_format($ценаОт, 0, ',', ' ') }} ₸
                 </div>
-                @if ($product->price_max > $product->price_min)
-                    <p class="mt-1.5 text-sm text-muted">
-                        до {{ number_format((float) $product->price_max, 0, ',', ' ') }} ₸ — зависит от производителя
+                @if ($ценаДо && $ценаДо > $ценаОт)
+                    <p class="mt-2 text-sm text-muted">
+                        до {{ number_format($ценаДо, 0, ',', ' ') }} ₸ — зависит от производителя
                     </p>
                 @endif
 
-                {{--
-                    Установка рядом с ценой стекла.
-
-                    Без неё клиент видит одну сумму, а платит на пятнадцать тысяч
-                    больше — и узнаёт об этом от менеджера. Показываем сразу
-                    и складываем: человеку важно, сколько он отдаст всего.
-                --}}
-                @if ($installation)
-                    <div class="mt-3 rounded-xl bg-sunken px-3.5 py-3 text-sm">
+                @if (settings()->enabled('service_prices') && $installation)
+                    <div class="mt-4 rounded-2xl bg-sunken px-4 py-3.5 text-sm">
                         <div class="flex items-baseline justify-between gap-3">
                             <span class="text-muted">{{ $installation->name }}</span>
-                            <span class="font-semibold whitespace-nowrap">
+                            <span class="font-bold whitespace-nowrap">
                                 {{ number_format((float) $installation->price, 0, ',', ' ') }} ₸
                             </span>
                         </div>
-                        <div class="mt-2 flex items-baseline justify-between gap-3 border-t border-line pt-2">
-                            <span class="font-semibold">Со стеклом и работой</span>
-                            <span class="font-display font-extrabold whitespace-nowrap">
-                                {{ number_format((float) $product->price_min + (float) $installation->price, 0, ',', ' ') }} ₸
+                        <div class="mt-2.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5">
+                            <span class="font-bold">Со стеклом и работой</span>
+                            <span class="price text-xl">
+                                {{ number_format($ценаОт + (float) $installation->price, 0, ',', ' ') }} ₸
                             </span>
                         </div>
 
-                        {{-- «Когда» для человека с разбитым стеклом стоит вровень
-                             с «сколько». Ссылка здесь, а не внизу страницы. --}}
+                        @if (settings()->enabled('booking'))
                         <a href="{{ route('booking.form', $product) }}" wire:navigate
-                           class="mt-2 block text-center text-sm font-semibold text-brand-ink
-                                  underline-offset-4 hover:underline">
+                           class="mt-2.5 block text-center text-sm font-bold text-brand-ink underline-offset-4 hover:underline">
                             Выбрать время замены
                         </a>
-
-                        @if ($product->camera && $calibration)
-                            {{-- Камера за стеклом означает обязательную калибровку.
-                                 Умолчать о ней — значит выставить счёт на месте. --}}
-                            <p class="mt-2 text-xs text-warn-ink">
-                                За стеклом камера: после замены нужна {{ mb_strtolower($calibration->name) }}
-                                — {{ number_format((float) $calibration->price, 0, ',', ' ') }} ₸
-                            </p>
                         @endif
                     </div>
+                @elseif (settings()->enabled('booking'))
+                    <a href="{{ route('booking.form', $product) }}" wire:navigate
+                       class="mt-3 block text-center text-sm font-bold text-brand-ink underline-offset-4 hover:underline">
+                        Выбрать время замены
+                    </a>
                 @endif
             @else
-                <div class="font-display text-xl font-bold text-muted">Цена по запросу</div>
+                <div class="font-display text-xl font-extrabold text-muted">Цена по запросу</div>
             @endif
 
-            <div class="mt-3 flex items-center gap-2 text-sm font-semibold">
-                <span class="h-2 w-2 rounded-full {{ $product->in_stock ? 'bg-brand' : 'bg-line-strong' }}"></span>
-                {{ $product->in_stock ? 'Есть в наличии' : 'Под заказ' }}
+            <div class="mt-4 flex items-center gap-2 text-sm font-bold">
+                @if (settings()->enabled('display_stock'))
+                    <span class="h-2.5 w-2.5 rounded-full {{ $product->in_stock ? 'bg-ok' : 'bg-line-strong' }}"></span>
+                    {{ $product->in_stock ? 'Есть в наличии' : 'Под заказ' }}
+                @else
+                    <span class="h-2.5 w-2.5 rounded-full bg-line-strong"></span>
+                    Под заказ
+                @endif
             </div>
 
-            <form method="post" action="{{ route('cart.add', $product) }}" class="mt-4">
-                @csrf
-                <div class="flex gap-2">
-                    <input type="number" name="quantity" value="1" min="1" max="{{ App\Cart\Cart::MAX_QUANTITY }}"
+            @if (settings()->enabled('cart'))
+            @php
+                $выбранныйОффер = $product->offers->where('is_active', true)
+                    ->sortBy(fn ($offer) => $offer->sellingPrice($покупатель) ?? PHP_INT_MAX)
+                    ->first();
+            @endphp
+            <div class="mt-5 space-y-2" data-offer-sync>
+                {{-- Две отдельные формы: иначе часть браузеров и JS путают submitter --}}
+                <form method="post" action="{{ route('cart.add', $product) }}">
+                    @csrf
+                    <input type="hidden" name="go_to_cart" value="1">
+                    <input type="hidden" name="quantity" value="1">
+                    <input type="hidden" name="offer_id" value="{{ $выбранныйОффер?->id }}" data-selected-offer>
+                    <button type="submit" class="btn btn-primary w-full !rounded-xl">
+                        Быстрый заказ
+                    </button>
+                    <p class="mt-1.5 text-center text-xs text-faint">Сразу к оформлению в корзине</p>
+                </form>
+
+                <form method="post" action="{{ route('cart.add', $product) }}" class="flex gap-2">
+                    @csrf
+                    <input type="hidden" name="offer_id" value="{{ $выбранныйОффер?->id }}" data-selected-offer>
+                    <input type="number" name="quantity" value="1" min="1" max="{{ App\Cart\Cart::maxQuantity() }}"
                            aria-label="Количество"
-                           class="w-20 rounded-xl border border-line bg-surface px-3 py-3.5 text-center text-sm
-                                  focus:border-brand focus:outline-none">
-                    <button class="flex-1 rounded-xl bg-brand py-3.5 font-bold text-on-brand
-                                   transition hover:bg-brand-hover active:scale-[0.99]">
+                           class="input !w-20 !rounded-xl !px-3 !text-center">
+                    <button type="submit" class="btn btn-outline flex-1 !rounded-xl">
                         В корзину
                     </button>
-                </div>
-            </form>
-
-            @if (session('cart_added'))
-                <p class="mt-2 rounded-lg bg-brand-soft p-2.5 text-center text-xs font-semibold text-brand-ink">
-                    Добавлено. <a href="{{ route('cart.show') }}" class="underline">Перейти в корзину</a>
-                </p>
-            @endif
-
-            <a href="#zayavka"
-               class="mt-2 block w-full rounded-xl border border-line py-3 text-center font-semibold
-                      transition hover:bg-sunken">
+                </form>
+            </div>
+            @else
+            <a href="#zayavka" class="btn btn-outline mt-5 w-full !rounded-xl">
                 Оставить заявку на это стекло
             </a>
+            @endif
 
-            <a href="tel:{{ config('company.phones.0.tel') }}"
-               class="mt-2 block w-full rounded-xl border border-line py-3 text-center font-semibold
-                      transition hover:bg-sunken">
+            <a href="tel:{{ settings()->phones()[0]['tel'] ?? config('company.phones.0.tel') }}"
+               class="btn btn-ghost mt-1 w-full">
                 Позвонить
             </a>
 
@@ -222,49 +291,56 @@
         </div>
 
         @if ($product->offers->isNotEmpty())
-            <div class="mt-4 rounded-card border border-line bg-surface p-5">
-                <h2 class="font-bold">Предложения поставщиков</h2>
-                <p class="mt-1 text-xs text-muted">Одно стекло, разные производители и гарантия</p>
+            <div class="card mt-4 p-5">
+                <h2 class="font-extrabold">Предложения поставщиков</h2>
+                <p class="mt-1 text-xs text-muted">Одно стекло, разные производители и гарантия. Выберите вариант — он попадёт в заказ.</p>
 
-                <ul class="mt-3.5 space-y-1">
-                    @foreach ($product->offers->sortBy('price_retail') as $offer)
-                        <li class="flex items-center justify-between gap-3 rounded-xl px-2.5 py-2.5
-                                   {{ $loop->first ? 'bg-brand-soft' : '' }}">
-                            <div class="min-w-0">
-                                <div class="flex items-center gap-2">
-                                    <span class="truncate text-sm font-semibold">{{ $offer->supplier->name }}</span>
-                                    @if ($loop->first)
-                                        <span class="shrink-0 rounded-pill bg-brand px-2 py-0.5 text-[10px]
-                                                     leading-none font-bold text-on-brand">
-                                            дешевле всего
+                <ul class="mt-4 space-y-2" data-offer-list>
+                    @foreach ($product->offers->sortBy(fn ($offer) => $offer->sellingPrice($покупатель) ?? PHP_INT_MAX) as $offer)
+                        @php $ценаОффера = $offer->sellingPrice($покупатель); @endphp
+                        <li>
+                            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-line p-3.5 transition hover:border-brand/30
+                                       has-checked:border-brand has-checked:bg-brand-soft/40
+                                       {{ $loop->first ? 'border-brand/25 bg-brand-soft/40' : 'bg-surface' }}">
+                                <span class="flex min-w-0 items-start gap-3">
+                                    <input type="radio" name="picked_offer" value="{{ $offer->id }}"
+                                           data-price="{{ (float) ($ценаОффера ?? 0) }}"
+                                           data-price-label="{{ $ценаОффера ? number_format($ценаОффера, 0, ',', ' ').' ₸' : 'Цена по запросу' }}"
+                                           @checked($loop->first)
+                                           class="mt-1 accent-brand">
+                                    <span class="min-w-0">
+                                        <span class="flex items-center gap-2">
+                                            <x-supplier-logo :supplier="$offer->supplier" />
+                                            @if ($loop->first)
+                                                <span class="badge badge-brand">лучшая цена</span>
+                                            @endif
                                         </span>
-                                    @endif
-                                </div>
-                                <div class="mt-0.5 text-xs text-faint">
-                                    {{-- Страна — второй вопрос после цены: на одну машину
-                                         китайское стекло и европейское различаются втрое --}}
-                                    @if ($offer->supplier->country)
-                                        <span class="font-semibold text-ink">{{ $offer->supplier->country }}</span> ·
-                                    @endif
-                                    {{ $offer->supplier->tierLabel() }}
-                                    @if ($offer->warranty_months)
-                                        · гарантия {{ $offer->warranty_months }} мес.
-                                    @endif
-                                    {{-- Показываем свободный остаток, а не складской:
-                                         обещать то, что уже отложено под чужой заказ, — обман --}}
-                                    @php($available = $offer->available())
-                                    @if ($available > 0)
-                                        · <span class="font-semibold text-brand-ink">в наличии {{ $available }} шт</span>
-                                    @elseif ($offer->stock_qty > 0)
-                                        · <span class="text-faint">всё в резерве, привезём под заказ</span>
-                                    @endif
-                                </div>
-                            </div>
-                            <div class="shrink-0 text-sm font-bold whitespace-nowrap">
-                                {{ $offer->price_retail
-                                    ? number_format((float) $offer->price_retail, 0, ',', ' ').' ₸'
-                                    : '—' }}
-                            </div>
+                                        <span class="mt-1.5 block text-xs text-faint">
+                                            @if ($offer->supplier->country)
+                                                <span class="font-semibold text-ink">{{ $offer->supplier->country }}</span> ·
+                                            @endif
+                                            @if ($offer->warranty_months)
+                                                гарантия {{ $offer->warranty_months }} мес. ·
+                                            @endif
+                                            @if (settings()->enabled('display_stock'))
+                                                @php($available = $offer->available())
+                                                @if ($available > 0)
+                                                    <span class="font-semibold text-ok-ink">в наличии {{ $available }} шт</span>
+                                                @elseif ($offer->stock_qty > 0)
+                                                    <span class="text-faint">под заказ</span>
+                                                @endif
+                                            @else
+                                                <span class="text-faint">под заказ</span>
+                                            @endif
+                                        </span>
+                                    </span>
+                                </span>
+                                <span class="price shrink-0 text-base">
+                                    {{ $ценаОффера
+                                        ? number_format($ценаОффера, 0, ',', ' ').' ₸'
+                                        : '—' }}
+                                </span>
+                            </label>
                         </li>
                     @endforeach
                 </ul>
@@ -273,30 +349,26 @@
     </aside>
 </div>
 
-<section id="zayavka" class="mt-10 scroll-mt-28 sm:mt-14">
-    <div class="mx-auto max-w-2xl rounded-card border border-line bg-surface p-5 shadow-card sm:p-7">
-        <h2 class="text-xl font-bold">Оставьте заявку на это стекло</h2>
+@unless (settings()->enabled('cart'))
+<section id="zayavka" class="reveal mt-10 scroll-mt-28 sm:mt-14">
+    <div class="card mx-auto max-w-2xl p-5 shadow-lift sm:p-8">
+        <h2 class="text-xl font-extrabold">Оставьте заявку на это стекло</h2>
         <p class="mt-1 mb-5 text-sm text-muted">
             {{ $product->name }}
-            @if ($product->price_min)
-                — от {{ number_format((float) $product->price_min, 0, ',', ' ') }} ₸
+            @if ($ценаОт)
+                — от {{ number_format($ценаОт, 0, ',', ' ') }} ₸
             @endif
         </p>
-
-        @if ($errors->any())
-            <div class="mb-4 rounded-xl border border-warn/40 bg-warn-soft p-4 text-sm text-warn-ink">
-                Проверьте поля формы — что-то заполнено не так.
-            </div>
-        @endif
 
         <x-order-form :action="route('order.store', $product)" />
     </div>
 </section>
+@endunless
 
 @if ($related->isNotEmpty())
-    <section class="mt-10 sm:mt-14">
-        <h2 class="text-xl font-bold sm:text-2xl">Другие стёкла для этой машины</h2>
-        <div class="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
+    <section class="reveal mt-10 sm:mt-14">
+        <h2 class="text-xl font-extrabold sm:text-2xl">Другие стёкла для этой машины</h2>
+        <div class="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
             @foreach ($related as $item)
                 <x-product-card :product="$item" />
             @endforeach
@@ -304,13 +376,13 @@
     </section>
 @endif
 
-{{-- Нижняя панель на телефоне: цена и действие всегда под большим пальцем. --}}
-<div class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
+{{-- Нижняя панель на телефоне --}}
+<div class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
     <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1">
-            @if ($product->price_min)
-                <div class="font-display text-lg leading-none font-extrabold">
-                    {{ number_format((float) $product->price_min, 0, ',', ' ') }} ₸
+            @if ($ценаОт)
+                <div class="price price-brand text-xl">
+                    {{ number_format($ценаОт, 0, ',', ' ') }} ₸
                 </div>
                 <div class="mt-0.5 truncate text-xs text-faint">{{ $product->glass_type?->label() }}</div>
             @else
@@ -318,17 +390,26 @@
             @endif
         </div>
 
-        <form method="post" action="{{ route('cart.add', $product) }}" class="shrink-0">
-            @csrf
-            <input type="hidden" name="go_to_cart" value="1">
-            <button class="rounded-xl bg-brand px-6 py-3 text-sm font-bold text-on-brand active:scale-[0.98]">
-                В корзину
-            </button>
-        </form>
+        @if (settings()->enabled('cart'))
+        <div class="flex shrink-0 gap-2">
+            <form method="post" action="{{ route('cart.add', $product) }}">
+                @csrf
+                <input type="hidden" name="offer_id" value="{{ $выбранныйОффер?->id }}" data-selected-offer>
+                <button type="submit" class="btn btn-outline btn-sm">В корзину</button>
+            </form>
+            <form method="post" action="{{ route('cart.add', $product) }}">
+                @csrf
+                <input type="hidden" name="go_to_cart" value="1">
+                <input type="hidden" name="offer_id" value="{{ $выбранныйОффер?->id }}" data-selected-offer>
+                <button type="submit" class="btn btn-primary">Оформить</button>
+            </form>
+        </div>
+        @else
+            <a href="#zayavka" class="btn btn-primary">Заявка</a>
+        @endif
     </div>
 </div>
 
-{{-- чтобы панель не перекрывала последний блок страницы --}}
-<div class="h-20 lg:hidden"></div>
+<div class="h-28 lg:hidden"></div>
 
 @endsection

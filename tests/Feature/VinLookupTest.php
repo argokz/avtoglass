@@ -173,4 +173,11 @@ class VinLookupTest extends TestCase
 
         $this->assertNull(session('vin'));
     }
+
+    public function test_полный_vin_не_читается_из_адресной_строки(): void
+    {
+        Livewire::withQueryParams(['vin' => 'JTDBR32E560012345'])
+            ->test(VinLookup::class)
+            ->assertSet('vin', '');
+    }
 }

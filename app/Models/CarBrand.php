@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 class CarBrand extends Model
 {
@@ -35,7 +34,7 @@ class CarBrand extends Model
     public function logoUrl(): ?string
     {
         return $this->logo_path
-            ? Storage::disk('public')->url($this->logo_path)
+            ? файлВитрины($this->logo_path)
             : null;
     }
 }

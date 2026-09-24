@@ -34,6 +34,23 @@ class CarModelResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    /**
+     * Счётчик показывает очередь разбора, а не число моделей: в имени остался
+     * хвост от прайса, и покупатель видит его в подборе. Правит человек —
+     * верное имя знает он, а не эвристика.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $pending = static::getModel()::where('needs_review', true)->count();
+
+        return $pending > 0 ? (string) $pending : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
     public static function form(Schema $schema): Schema
     {
         return CarModelForm::configure($schema);

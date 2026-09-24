@@ -9,6 +9,7 @@ use App\Catalog\ProductSort;
 use App\Enums\GlassType;
 use App\Models\CarBrand;
 use App\Models\CarModel;
+use App\Models\Product;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -64,6 +65,21 @@ class CatalogFilters extends Component
     #[Url(as: 'brand', except: 0)]
     public int $supplierId = 0;
 
+    #[Url(except: false)]
+    public bool $camera = false;
+
+    #[Url(except: false)]
+    public bool $rain_sensor = false;
+
+    #[Url(except: false)]
+    public bool $sun_band = false;
+
+    #[Url(except: false)]
+    public bool $heated_wipers = false;
+
+    #[Url(except: false)]
+    public bool $heated_full = false;
+
     /**
      * Любая смена фильтра возвращает на первую страницу.
      *
@@ -85,6 +101,11 @@ class CatalogFilters extends Component
         $this->year = '';
         $this->inStock = false;
         $this->supplierId = 0;
+        $this->camera = false;
+        $this->rain_sensor = false;
+        $this->sun_band = false;
+        $this->heated_wipers = false;
+        $this->heated_full = false;
         $this->resetPage();
     }
 
@@ -100,18 +121,43 @@ class CatalogFilters extends Component
         $this->resetPage();
     }
 
+    public function toggleOption(string $flag): void
+    {
+        if (! array_key_exists($flag, Product::STOREFRONT_OPTIONS)) {
+            return;
+        }
+
+        $this->{$flag} = ! $this->{$flag};
+        $this->resetPage();
+    }
+
     private function filter(): ProductFilter
     {
         return new ProductFilter(
             type: GlassType::tryFrom($this->type),
+            options: $this->selectedOptions(),
             carModelId: $this->model->getKey(),
             // Год чистим тем же правилом, что и при заходе по прямой ссылке:
             // в адресной строке может оказаться что угодно.
-            year: ProductFilter::sanitizeYear($this->year),
+            year: settings()->enabled('year_filter') ? ProductFilter::sanitizeYear($this->year) : null,
             sort: ProductSort::tryFrom($this->sort) ?? ProductSort::PriceAsc,
             inStockOnly: $this->inStock,
             supplierId: $this->supplierId ?: null,
         );
+    }
+
+    /** @return list<string> */
+    private function selectedOptions(): array
+    {
+        $selected = [];
+
+        foreach (array_keys(Product::STOREFRONT_OPTIONS) as $flag) {
+            if ($this->{$flag}) {
+                $selected[] = $flag;
+            }
+        }
+
+        return $selected;
     }
 
     public function render(): View
@@ -125,6 +171,7 @@ class CatalogFilters extends Component
             'products' => $products->paginate($filter),
             'types' => $products->countsByType($filter),
             'suppliers' => $products->countsBySupplier($filter),
+            'optionCounts' => $products->countsByOption($filter),
             'years' => $years->for($this->model),
             'generation' => $years->generationFor($this->model, $filter->year),
         ]);

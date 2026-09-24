@@ -7,6 +7,7 @@ use App\Models\Interaction;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\StockReservation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,10 @@ class StockLedger
     /** Сколько единиц можно продать прямо сейчас. */
     public function available(Offer $offer): int
     {
+        if (! settings()->enabled('reservations')) {
+            return max(0, (int) $offer->stock_qty);
+        }
+
         return max(0, (int) $offer->stock_qty - $this->held($offer));
     }
 
@@ -51,6 +56,10 @@ class StockLedger
      */
     public function reserve(Order $order): void
     {
+        if (! settings()->enabled('reservations')) {
+            return;
+        }
+
         $order->loadMissing('items');
 
         foreach ($order->items as $item) {
@@ -98,6 +107,8 @@ class StockLedger
                 'expires_at' => $this->expiryFor($order),
             ]);
 
+            $this->refreshProduct($offer);
+
             if ($granted < $wanted) {
                 Interaction::system(
                     $order,
@@ -130,6 +141,8 @@ class StockLedger
         StockReservation::whereIn('id', $reservations->pluck('id'))
             ->update(['status' => ReservationStatus::Released, 'updated_at' => now()]);
 
+        $this->refreshProducts($reservations->pluck('offer_id'));
+
         Interaction::system(
             $order,
             'Резерв снят ('.$reason.'): '.$reservations->sum('quantity').' шт вернулись в продажу'
@@ -159,6 +172,8 @@ class StockLedger
             });
         }
 
+        $this->refreshProducts($reservations->pluck('offer_id'));
+
         return $reservations->count();
     }
 
@@ -171,12 +186,14 @@ class StockLedger
     public function releaseExpired(): int
     {
         $released = 0;
+        $offerIds = collect();
 
         StockReservation::expired()
             ->with('order')
-            ->chunkById(200, function ($reservations) use (&$released) {
+            ->chunkById(200, function ($reservations) use (&$released, $offerIds) {
                 foreach ($reservations as $reservation) {
                     $reservation->update(['status' => ReservationStatus::Released]);
+                    $offerIds->push($reservation->offer_id);
 
                     if ($reservation->order !== null) {
                         Interaction::system(
@@ -190,6 +207,93 @@ class StockLedger
                 }
             });
 
+        $this->refreshProducts($offerIds);
+
         return $released;
+    }
+
+    /**
+     * in_stock на карточке — свободный остаток, а не складской.
+     *
+     * Иначе фильтр «только в наличии» показывает стекло, которое уже
+     * обещано другому заказу, и покупатель оформляет то, чего продать нельзя.
+     */
+    public function refreshProduct(Offer $offer): void
+    {
+        $offer->loadMissing('product');
+
+        $offer->product?->refreshPricing();
+    }
+
+    /** @param  iterable<int|string|null>  $offerIds */
+    public function refreshProducts(iterable $offerIds): void
+    {
+        $ids = collect($offerIds)->filter()->unique()->values();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        Product::query()
+            ->whereIn('id', Offer::query()->whereIn('id', $ids)->select('product_id'))
+            ->get()
+            ->each
+            ->refreshPricing();
+    }
+
+    /** Полный пересчёт витрины: цены и свободное наличие по всем карточкам. */
+    public function refreshAllProducts(): void
+    {
+        /*
+         * Одним UPDATE, а не перебором: на пяти тысячах карточек
+         * refreshPricing() — это десятки тысяч запросов и минуты работы.
+         *
+         * in_stock считает свободный остаток (qty минус бронь), иначе после
+         * импорта витрина снова начнёт врать про «есть в наличии».
+         */
+        if (! settings()->enabled('reservations')) {
+            DB::statement('
+                UPDATE products SET
+                    price_min = (
+                        SELECT MIN(price_retail) FROM offers
+                        WHERE offers.product_id = products.id AND offers.is_active = true
+                    ),
+                    price_max = (
+                        SELECT MAX(price_retail) FROM offers
+                        WHERE offers.product_id = products.id AND offers.is_active = true
+                    ),
+                    in_stock = EXISTS (
+                        SELECT 1 FROM offers
+                        WHERE offers.product_id = products.id
+                          AND offers.is_active = true
+                          AND offers.stock_qty > 0
+                    )
+            ');
+
+            return;
+        }
+
+        DB::statement('
+            UPDATE products SET
+                price_min = (
+                    SELECT MIN(price_retail) FROM offers
+                    WHERE offers.product_id = products.id AND offers.is_active = true
+                ),
+                price_max = (
+                    SELECT MAX(price_retail) FROM offers
+                    WHERE offers.product_id = products.id AND offers.is_active = true
+                ),
+                in_stock = EXISTS (
+                    SELECT 1 FROM offers
+                    WHERE offers.product_id = products.id
+                      AND offers.is_active = true
+                      AND (offers.stock_qty - COALESCE((
+                          SELECT SUM(stock_reservations.quantity)
+                          FROM stock_reservations
+                          WHERE stock_reservations.offer_id = offers.id
+                            AND stock_reservations.status = ?
+                      ), 0)) > 0
+                )
+        ', [ReservationStatus::Held->value]);
     }
 }

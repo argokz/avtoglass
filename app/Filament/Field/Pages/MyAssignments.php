@@ -3,6 +3,7 @@
 namespace App\Filament\Field\Pages;
 
 use App\Actions\AcceptCashPayment;
+use App\Analytics\CashOnHand;
 use App\Enums\AssignmentStatus;
 use App\Models\Assignment;
 use BackedEnum;
@@ -37,6 +38,18 @@ class MyAssignments extends Page
         return today()->addDays($this->dayOffset);
     }
 
+    /**
+     * Сколько наличных курьер везёт с собой.
+     *
+     * Сдать отсюда нельзя намеренно: принимает кассир, и вторая подпись
+     * обязана быть чужой. Цифра нужна, чтобы курьер знал, сколько
+     * пересчитывать на сдаче, а не узнавал сумму от принимающего.
+     */
+    public function getCashOnHandProperty(): float
+    {
+        return app(CashOnHand::class)->totalFor(Auth::user());
+    }
+
     public function getAssignmentsProperty(): Collection
     {
         return Assignment::query()
@@ -64,6 +77,8 @@ class MyAssignments extends Page
      */
     public function acceptCash(int $assignmentId, string $amount): void
     {
+        abort_unless(settings()->enabled('cash_in_field'), 403);
+
         $assignment = Assignment::query()
             ->where('assignee_id', Auth::id())   // чужой наряд не тронуть
             ->with('order')

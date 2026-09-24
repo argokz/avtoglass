@@ -3,13 +3,16 @@
 namespace App\Livewire;
 
 use App\Actions\BookInstallation;
+use App\Http\Requests\OrderContactRules;
 use App\Logistics\BookingSlots;
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServicePoint;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -44,8 +47,19 @@ class SlotPicker extends Component
 
     public string $comment = '';
 
+    /** Ловушка для ботов — то же поле, что у обычной заявки. */
+    public string $website = '';
+
+    public bool $privacy_consent = false;
+
     /** Номер оформленной заявки — экран после этого показывает подтверждение. */
     public ?string $booked = null;
+
+    public ?string $bookedAt = null;
+
+    public ?string $bookedPoint = null;
+
+    public ?string $bookedAddress = null;
 
     public ?string $error = null;
 
@@ -81,16 +95,30 @@ class SlotPicker extends Component
     {
         $this->error = null;
 
-        $this->validate([
-            'name' => ['required', 'string', 'min:2', 'max:120'],
-            'phone' => ['required', 'string', 'min:10', 'max:32'],
-            'comment' => ['nullable', 'string', 'max:2000'],
-            'chosen' => ['required', 'string'],
-        ], attributes: [
-            'name' => 'имя',
-            'phone' => 'телефон',
-            'chosen' => 'время',
-        ]);
+        $this->validate(
+            OrderContactRules::fields(withSlot: true),
+            OrderContactRules::messages(),
+            OrderContactRules::attributes(),
+        );
+
+        $digits = Customer::normalizePhone($this->phone);
+
+        if ($digits === null || mb_strlen($digits) < 10) {
+            $this->addError('phone', 'Похоже, в номере не хватает цифр');
+
+            return;
+        }
+
+        // Тот же лимит, что у POST-заявок: 10 в минуту с одного адреса.
+        $throttleKey = 'orders:'.request()->ip();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 10)) {
+            $this->addError('phone', 'Слишком много заявок подряд. Подождите минуту и попробуйте снова.');
+
+            return;
+        }
+
+        RateLimiter::hit($throttleKey, 60);
 
         $point = $this->point();
 
@@ -105,6 +133,7 @@ class SlotPicker extends Component
                 'name' => $this->name,
                 'phone' => $this->phone,
                 'comment' => $this->comment ?: null,
+                'privacy_consent' => $this->privacy_consent,
             ],
             point: $point,
             start: Carbon::parse($this->chosen),
@@ -120,12 +149,22 @@ class SlotPicker extends Component
         }
 
         $this->booked = $order->number;
+        $this->bookedAt = $this->chosen;
+        $this->bookedPoint = $point->name;
+        $this->bookedAddress = $point->address;
     }
 
     /** @return Collection<int,ServicePoint> */
     public function points(): Collection
     {
-        return ServicePoint::where('is_active', true)->orderBy('name')->get();
+        $city = currentCity();
+
+        return ServicePoint::where('is_active', true)
+            ->where(function ($query) use ($city) {
+                $query->where('city', $city)->orWhereNull('city');
+            })
+            ->orderBy('name')
+            ->get();
     }
 
     private function point(): ?ServicePoint

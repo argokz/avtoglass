@@ -40,11 +40,11 @@ class HalykEpayGateway implements PaymentGateway
      * Токен под конкретный платёж. Банк привязывает его к сумме и номеру
      * счёта, поэтому получать его заранее и переиспользовать нельзя.
      *
-     * @return array{token:string,invoice_id:string,secret_hash:string}|null
+     * @return array{token:string,invoice_id:string,secret_hash:string,oauth:array}|null
      */
     public function authorize(Payment $payment): ?array
     {
-        $invoiceId = $this->invoiceId($payment);
+        $invoiceId = $this->mintInvoiceId($payment);
         $secretHash = $this->secretHash($payment);
 
         /*
@@ -82,8 +82,11 @@ class HalykEpayGateway implements PaymentGateway
             return null;
         }
 
+        $oauth = $response->json();
+
         return [
             'token' => (string) $response->json('access_token'),
+            'oauth' => is_array($oauth) ? $oauth : ['access_token' => (string) $response->json('access_token')],
             'invoice_id' => $invoiceId,
             'secret_hash' => $secretHash,
         ];
@@ -92,18 +95,29 @@ class HalykEpayGateway implements PaymentGateway
     /** Поля, которые уходят в halyk.pay() на нашей странице. */
     public function widgetPayload(Payment $payment, array $auth): array
     {
-        return [
+        $payload = [
             'invoiceId' => $auth['invoice_id'],
             'backLink' => route('payment.result', $payment),
             'failureBackLink' => route('payment.result', $payment),
+            'autoBackLink' => true,
             'postLink' => route('payment.halyk.callback'),
             'language' => 'rus',
             'description' => Str::limit('Заказ '.$payment->order->number, 120, ''),
             'terminal' => config('payments.halyk.terminal'),
             'amount' => (int) round((float) $payment->amount),
             'currency' => $payment->currency,
-            'auth' => $auth['token'],
+            // Банк ждёт ответ oauth целиком, не одну строку access_token:
+            // иначе страница кассы сразу пишет «время оплаты истекло».
+            'auth' => $auth['oauth'] ?? $auth['token'],
         ];
+
+        $phone = preg_replace('/\D+/', '', (string) $payment->order->customer?->phone);
+
+        if (filled($phone)) {
+            $payload['phone'] = $phone;
+        }
+
+        return $payload;
     }
 
     public function widgetScript(): string
@@ -123,14 +137,9 @@ class HalykEpayGateway implements PaymentGateway
             return null;
         }
 
-        // Номер счёта — это id платежа с ведущими нулями, поэтому платёж
-        // достаётся одним запросом по ключу. Перебирать все платежи провайдера
-        // в памяти нельзя: на второй тысяче колбэк начнёт таймаутить.
-        $payment = Payment::where('provider', $this->name())
-            ->whereKey((int) $invoiceId)
-            ->first();
+        $payment = $this->findByInvoiceId($invoiceId);
 
-        if ($payment === null || $this->invoiceId($payment) !== $invoiceId) {
+        if ($payment === null) {
             return null;
         }
 
@@ -155,12 +164,64 @@ class HalykEpayGateway implements PaymentGateway
     }
 
     /**
-     * Номер счёта для банка: 6–15 цифр, уникальный на заказ.
-     * Берём id платежа — он и уникален, и находится по нему обратно.
+     * Номер счёта, который ушёл в банк по этому платежу.
+     *
+     * Банк требует 6–15 цифр и уникальность последних шести на терминале.
+     * Песочница общая на всех, поэтому короткий id платежа (000076) там
+     * уже кто-то использовал — касса сразу отвечает «время оплаты истекло».
      */
     public function invoiceId(Payment $payment): string
     {
+        $stored = $payment->payload['invoice_id'] ?? null;
+
+        if (is_string($stored) && preg_match('/^\d{6,15}$/', $stored)) {
+            return $stored;
+        }
+
         return str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Новый номер на каждый запрос токена: повтор той же попытки не должен
+     * упираться в уже закрытый счёт в банке.
+     */
+    private function mintInvoiceId(Payment $payment): string
+    {
+        $id = sprintf('%09d%06d', now()->timestamp % 1_000_000_000, random_int(0, 999_999));
+
+        $payload = $payment->payload ?? [];
+        $payload['invoice_id'] = $id;
+        $payment->forceFill(['payload' => $payload])->save();
+
+        return $id;
+    }
+
+    private function findByInvoiceId(string $invoiceId): ?Payment
+    {
+        $match = Payment::query()
+            ->where('provider', $this->name())
+            ->where('payload->invoice_id', $invoiceId)
+            ->first();
+
+        if ($match !== null) {
+            return $match;
+        }
+
+        // Старые попытки, пока номер счёта ещё равнялся id платежа.
+        if (! preg_match('/^\d{6}$/', $invoiceId)) {
+            return null;
+        }
+
+        $payment = Payment::query()
+            ->where('provider', $this->name())
+            ->whereKey((int) $invoiceId)
+            ->first();
+
+        if ($payment === null || filled($payment->payload['invoice_id'] ?? null)) {
+            return null;
+        }
+
+        return $payment;
     }
 
     /**
@@ -171,6 +232,77 @@ class HalykEpayGateway implements PaymentGateway
     private function secretHash(Payment $payment): string
     {
         return hash_hmac('sha256', $payment->token, (string) config('app.key'));
+    }
+
+    public function refund(Payment $payment): bool
+    {
+        $transactionId = $payment->external_id;
+
+        if (! filled($transactionId)) {
+            Log::warning('Halyk: возврат без id операции банка', ['payment_id' => $payment->id]);
+
+            return false;
+        }
+
+        $token = $this->clientAccessToken();
+
+        if ($token === null) {
+            return false;
+        }
+
+        $url = rtrim($this->endpoint('api'), '/').'/operation/'.rawurlencode((string) $transactionId).'/refund';
+
+        try {
+            $response = Http::withToken($token)
+                ->timeout(20)
+                ->post($url, [
+                    'amount' => (int) round((float) $payment->amount),
+                    'externalID' => (string) $payment->id,
+                ]);
+        } catch (ConnectionException $e) {
+            Log::warning('Halyk ePay недоступен при возврате', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
+        if (! $response->successful()) {
+            Log::warning('Halyk отказал в возврате', [
+                'payment_id' => $payment->id,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function clientAccessToken(): ?string
+    {
+        try {
+            $response = Http::asForm()
+                ->timeout(20)
+                ->post($this->endpoint('oauth'), [
+                    'grant_type' => 'client_credentials',
+                    'scope' => 'webapi usermanagement email_send verification statement statistics payment',
+                    'client_id' => config('payments.halyk.client_id'),
+                    'client_secret' => config('payments.halyk.client_secret'),
+                ]);
+        } catch (ConnectionException $e) {
+            Log::warning('Halyk ePay недоступен', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        if (! $response->successful() || ! $response->json('access_token')) {
+            return null;
+        }
+
+        return (string) $response->json('access_token');
     }
 
     private function endpoint(string $key): string

@@ -2,26 +2,32 @@
 
 namespace App\Cart;
 
+use App\Models\Offer;
 use App\Models\Product;
 
 /**
  * Строка корзины.
  *
- * Цену не храним, а берём из карточки при каждом показе. Прайсы поставщиков
- * переливаются еженедельно, и корзина, запомнившая цену прошлой недели,
- * пообещала бы клиенту то, чего уже нет. Зафиксировать цену нужно ровно
- * один раз — в момент оформления заказа, и это делает OrderItem.
+ * Цену берём из выбранного предложения, иначе из минимума карточки.
+ * Зафиксировать её нужно ровно один раз — в момент оформления, это OrderItem.
  */
 readonly class CartItem
 {
     public function __construct(
         public Product $product,
         public int $quantity,
+        public ?Offer $offer = null,
     ) {}
 
     public function price(): float
     {
-        return (float) ($this->product->price_min ?? 0);
+        $buyer = текущийПокупатель();
+
+        if ($this->offer !== null) {
+            return (float) ($this->offer->sellingPrice($buyer) ?? 0);
+        }
+
+        return (float) ($this->product->sellingPriceMin($buyer) ?? 0);
     }
 
     public function subtotal(): float

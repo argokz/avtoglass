@@ -13,11 +13,11 @@
 
         <h2 class="mt-4 font-display text-xl font-bold">Записали, заявка {{ $booked }}</h2>
         <p class="mt-2 text-sm text-muted">
-            Ждём вас {{ \Illuminate\Support\Carbon::parse($chosen)->translatedFormat('j F, H:i') }}
-            — {{ $points->firstWhere('id', $pointId)?->name }}.
+            Ждём вас {{ \Illuminate\Support\Carbon::parse($bookedAt ?: $chosen)->translatedFormat('j F, H:i') }}
+            — {{ $bookedPoint ?: $points->firstWhere('id', $pointId)?->name }}.
         </p>
         <p class="mt-1 text-sm text-muted">
-            {{ $points->firstWhere('id', $pointId)?->address }}
+            {{ $bookedAddress ?: $points->firstWhere('id', $pointId)?->address }}
         </p>
         <p class="mx-auto mt-4 max-w-md text-xs text-faint">
             Менеджер позвонит, чтобы подтвердить наличие стекла. Если планы поменяются,
@@ -39,7 +39,20 @@
         </div>
     @endif
 
-    {{-- Сервис. Показываем выбор только когда точек больше одной. --}}
+    @if ($points->isEmpty())
+        <div class="mt-5 rounded-card border border-line bg-surface px-5 py-8 text-center text-sm">
+            <p class="font-semibold">В городе {{ currentCity() }} пока нет поста для записи</p>
+            <p class="mt-1 text-muted">
+                Смените город в шапке или оставьте заявку — менеджер предложит, куда приехать.
+            </p>
+            <a href="{{ route('order.form') }}" wire:navigate
+               class="mt-4 inline-block rounded-pill bg-brand px-5 py-2.5 text-sm font-semibold text-on-brand">
+                Оставить заявку
+            </a>
+        </div>
+    @else
+
+    {{-- Сервис. Выбор — если постов несколько; один всё равно называем, чтобы было ясно куда ехать. --}}
     @if ($points->count() > 1)
         <p class="text-sm font-semibold">Куда приедете</p>
 
@@ -55,6 +68,9 @@
                 </button>
             @endforeach
         </div>
+    @elseif ($points->count() === 1)
+        <p class="text-sm font-semibold">{{ $points->first()->name }}</p>
+        <p class="mt-0.5 text-xs text-muted">{{ $points->first()->address }}</p>
     @endif
 
     @if ($days->isEmpty())
@@ -98,7 +114,13 @@
             </p>
         </div>
 
-        <div class="mt-2 flex flex-wrap gap-2">
+        <div class="relative mt-4">
+            <div wire:loading.flex wire:target="selectDay,selectPoint"
+                 class="absolute inset-0 z-10 items-center justify-center rounded-card bg-surface/70 text-sm font-semibold">
+                Загружаем окна…
+            </div>
+
+            <div class="mt-2 flex flex-wrap gap-2" wire:loading.class="opacity-50" wire:target="selectDay,selectPoint">
             @foreach ($times as $time)
                 <button type="button" wire:click="selectSlot('{{ $time->toDateTimeString() }}')"
                         class="rounded-pill border px-4 py-2.5 text-sm font-semibold transition
@@ -108,6 +130,7 @@
                     {{ $time->format('H:i') }}
                 </button>
             @endforeach
+            </div>
         </div>
 
         @if ($error)
@@ -119,12 +142,22 @@
         {{-- Контакты спрашиваем последними: пока время не выбрано, они ни к чему --}}
         @if ($chosen)
             <form wire:submit="book" class="mt-6 rounded-card border border-line bg-surface p-5">
+                <div class="hidden" aria-hidden="true">
+                    <input type="text" wire:model="website" tabindex="-1" autocomplete="off">
+                </div>
+
                 <p class="text-sm">
                     <span class="text-muted">Выбрано:</span>
                     <span class="font-semibold">
                         {{ \Illuminate\Support\Carbon::parse($chosen)->translatedFormat('j F, H:i') }}
                     </span>
                 </p>
+
+                @error('website')
+                    <div class="mt-3 rounded-card border border-line bg-warn-soft px-4 py-3 text-sm text-warn-ink">
+                        {{ $message }}
+                    </div>
+                @enderror
 
                 <div class="mt-4 grid gap-3 sm:grid-cols-2">
                     <div>
@@ -155,6 +188,25 @@
                                      placeholder:text-faint focus:border-brand focus:outline-none"></textarea>
                 </div>
 
+                @if (settings()->enabled('privacy_consent'))
+                    <label class="mt-3 flex cursor-pointer items-start gap-2.5 text-sm text-muted">
+                        <input type="checkbox" wire:model="privacy_consent" value="1"
+                               class="mt-0.5 accent-brand">
+                        <span>
+                            Соглашаюсь на сбор и обработку персональных данных
+                            в соответствии с
+                            <a href="{{ route('privacy') }}" target="_blank" rel="noopener"
+                               class="font-semibold text-brand-ink underline-offset-2 hover:underline">
+                                политикой
+                            </a>
+                            и Законом РК «О персональных данных и их защите».
+                        </span>
+                    </label>
+                    @error('privacy_consent')
+                        <p class="mt-1 text-xs text-warn-ink">{{ $message }}</p>
+                    @enderror
+                @endif
+
                 <button type="submit" wire:loading.attr="disabled" wire:target="book"
                         class="mt-4 w-full rounded-pill bg-brand px-6 py-3 text-sm font-semibold text-on-brand
                                transition hover:bg-brand-hover disabled:opacity-60">
@@ -167,6 +219,7 @@
                 </p>
             </form>
         @endif
+    @endif
     @endif
 @endif
 

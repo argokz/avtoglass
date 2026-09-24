@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+use App\Enums\WholesaleStatus;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -27,6 +28,18 @@ class CustomerForm
                     TextInput::make('email')->label('Почта')->email(),
                 ]),
 
+            Section::make('Доставка')
+                ->description('Подставляется в следующую заявку с сайта')
+                ->columns(2)
+                ->schema([
+                    TextInput::make('default_city')->label('Город')->maxLength(64),
+                    TextInput::make('default_address')->label('Адрес')->columnSpanFull(),
+                    TextInput::make('preferred_fulfillment')
+                        ->label('Предпочтительный способ')
+                        ->helperText('installation / delivery / visit / pickup')
+                        ->maxLength(32),
+                ]),
+
             Section::make('Автомобиль')
                 ->description('Заполняется со временем — при повторном обращении не придётся спрашивать заново')
                 ->columns(3)
@@ -39,6 +52,33 @@ class CustomerForm
 
                     TextInput::make('car_plate')->label('Госномер'),
                     TextInput::make('vin')->label('VIN')->maxLength(24),
+                ]),
+
+            Section::make('Опт')
+                ->description('Закуп с витрины не показываем. Оптовая цена = розница минус скидка, но не ниже закупа.')
+                ->columns(2)
+                ->schema([
+                    Select::make('wholesale_status')
+                        ->label('Статус')
+                        ->options(WholesaleStatus::options())
+                        ->default(WholesaleStatus::Retail->value)
+                        ->required(),
+
+                    TextInput::make('wholesale_discount_percent')
+                        ->label('Скидка, %')
+                        ->numeric()
+                        ->minValue(0)
+                        ->maxValue(40)
+                        ->helperText('0 — те же цифры, что у розницы, но в кабинете интерфейс опта'),
+
+                    TextInput::make('company_name')
+                        ->label('Организация')
+                        ->maxLength(190),
+
+                    TextInput::make('bin')
+                        ->label('БИН / ИИН')
+                        ->maxLength(12)
+                        ->helperText('12 цифр'),
                 ]),
 
             Section::make('Заметки')

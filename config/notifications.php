@@ -25,4 +25,23 @@ return [
         // Секунды. Держим маленьким: заявка не должна ждать телеграм.
         'timeout' => (int) env('TELEGRAM_TIMEOUT', 5),
     ],
+
+    /*
+     * WhatsApp смены через Green-API. Клиентская кнопка wa.me работает
+     * и без этого: человек сам отправляет текст заявки в чат магазина.
+     */
+    'whatsapp' => [
+        'green_instance' => env('WHATSAPP_GREEN_INSTANCE'),
+        'green_token' => env('WHATSAPP_GREEN_TOKEN'),
+        'chat_id' => env('WHATSAPP_ALERT_CHAT'),
+        'timeout' => (int) env('WHATSAPP_TIMEOUT', 8),
+    ],
+
+    /*
+     * Письмо смене. По умолчанию уходит на почту компании из настроек.
+     * ORDER_ALERT_EMAIL нужен, когда витринный ящик и ящик смены разные.
+     */
+    'email' => [
+        'to' => env('ORDER_ALERT_EMAIL'),
+    ],
 ];

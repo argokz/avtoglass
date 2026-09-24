@@ -31,4 +31,12 @@ interface PaymentGateway
      * Возвращает null, если уведомлению нельзя верить — подпись не сошлась.
      */
     public function parseCallback(Request $request): ?CallbackResult;
+
+    /**
+     * Вернуть деньги по уже успешному платежу.
+     *
+     * false — касса не приняла возврат, статус в CRM трогать нельзя:
+     * иначе в заявке «возвращён», а деньги так и лежат на счёте.
+     */
+    public function refund(Payment $payment): bool;
 }

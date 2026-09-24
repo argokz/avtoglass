@@ -91,6 +91,25 @@ class AdminPanelTest extends TestCase
         $this->get('/admin/login')->assertOk();
     }
 
+    public function test_профиль_открывается_чтобы_включить_2fa(): void
+    {
+        $this->actingAs($this->admin())
+            ->get('/admin/profile')
+            ->assertOk();
+    }
+
+    public function test_секрет_аутентификатора_хранится_зашифрованным(): void
+    {
+        $admin = $this->admin();
+        $admin->saveAppAuthenticationSecret('TESTSECRET123456');
+
+        $this->assertSame('TESTSECRET123456', $admin->fresh()->getAppAuthenticationSecret());
+        $this->assertNotSame(
+            'TESTSECRET123456',
+            \Illuminate\Support\Facades\DB::table('users')->where('id', $admin->id)->value('app_authentication_secret')
+        );
+    }
+
     public function test_разделы_админки_открываются(): void
     {
         $this->actingAs($this->admin());

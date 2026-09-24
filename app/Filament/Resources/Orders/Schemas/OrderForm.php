@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Orders\Schemas;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
 use App\Models\Order;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Repeater;
@@ -46,16 +47,26 @@ class OrderForm
                         ->options(FulfillmentType::options())
                         ->live(),
 
+                    Select::make('payment_method')
+                        ->label('Оплата')
+                        ->options(PaymentMethod::options()),
+
                     DateTimePicker::make('scheduled_at')
                         ->label('Назначено на')
                         ->seconds(false)
                         ->helperText('Время доставки или замены'),
 
+                    TextInput::make('city')
+                        ->label('Город')
+                        ->maxLength(64),
+
                     TextInput::make('address')
                         ->label('Адрес')
                         ->columnSpanFull()
-                        // адрес нужен только курьеру
-                        ->visible(fn (callable $get) => $get('fulfillment') === FulfillmentType::Delivery->value),
+                        ->visible(fn (callable $get) => in_array($get('fulfillment'), [
+                            FulfillmentType::Delivery->value,
+                            FulfillmentType::Visit->value,
+                        ], true)),
                 ]),
 
             Section::make('Клиент')

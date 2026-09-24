@@ -105,7 +105,8 @@ class AutoGlassScraper
 
         // Сохранение фото в Storage disk 'public'
         if (! empty($data['image_binary']) && blank($product->image_path)) {
-            $filename = 'products/'.$product->id.'-'.substr(md5($data['image_binary']), 0, 8).'.png';
+            $ext = $this->extensionFor($data['image_binary']);
+            $filename = 'products/'.$product->id.'-'.substr(md5($data['image_binary']), 0, 8).'.'.$ext;
             Storage::disk('public')->put($filename, $data['image_binary']);
 
             $product->image_path = $filename;
@@ -234,12 +235,13 @@ class AutoGlassScraper
     private function fetchOrGenerateImage(Product $product, array $params): ?string
     {
         /*
-         * Для пропорций чертежа берём условный размер, когда настоящего нет.
-         * Это допустимо: рисунок и так схематичный. Но в карточку такое число
-         * не попадает — там пусто, и подписи сторон чертёж не ставит.
+         * Размеры на чертёж ставим только настоящие. Раньше здесь стоял
+         * запасной вариант 1400×800, и он уезжал прямо на картинку подписями
+         * «W: 1400 мм» — поле в карточке при этом оставалось пустым, а
+         * покупатель читал цифру с рисунка и верил ей.
          */
-        $w = $params['width_mm'] ?: 1400;
-        $h = $params['height_mm'] ?: 800;
+        $w = $params['width_mm'] ?: null;
+        $h = $params['height_mm'] ?: null;
         $type = $product->glass_type?->value ?? 'windshield';
         $eurocode = $product->eurocode ?: $product->internal_code ?: 'GLASS';
 
@@ -250,14 +252,71 @@ class AutoGlassScraper
     }
 
     /**
+     * Расширение по содержимому, а не по надежде.
+     *
+     * Схема стекла — это SVG, и сохранённая с именем .png она приезжает
+     * браузеру как image/png: файл на диске есть, в каталоге пустая рамка.
+     * Так и было со всеми карточками, пока расширение стояло жёстко.
+     */
+    private function extensionFor(string $binary): string
+    {
+        $head = ltrim(mb_substr($binary, 0, 512));
+
+        if (str_starts_with($head, '<svg') || str_starts_with($head, '<?xml')) {
+            return 'svg';
+        }
+
+        return match (true) {
+            str_starts_with($binary, "\x89PNG") => 'png',
+            str_starts_with($binary, "\xFF\xD8\xFF") => 'jpg',
+            str_starts_with($binary, 'GIF8') => 'gif',
+            str_starts_with($binary, 'RIFF') && str_contains(substr($binary, 0, 16), 'WEBP') => 'webp',
+            default => 'png',
+        };
+    }
+
+    /**
+     * Размерные линии — только под известные размеры.
+     *
+     * Стрелка с подписью читается как измерение, а не как украшение: если
+     * нарисовать её от запасного числа, покупатель закажет стекло по цифре,
+     * которую никто не мерил. Нет размера — нет и линии.
+     */
+    private function dimensionLines(?int $w, ?int $h): string
+    {
+        $lines = [];
+
+        if ($w !== null) {
+            $lines[] = <<<SVG
+        <!-- Линия ширины (W) -->
+        <line x1="45" y1="320" x2="555" y2="320" stroke="#38bdf8" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+        <rect x="250" y="306" width="100" height="28" rx="4" fill="#0b0f19" stroke="#38bdf8" stroke-width="1.2"/>
+        <text x="300" y="325" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">W: {$w} мм</text>
+SVG;
+        }
+
+        if ($h !== null) {
+            $lines[] = <<<SVG
+        <!-- Линия высоты (H) -->
+        <line x1="590" y1="40" x2="590" y2="270" stroke="#38bdf8" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+        <rect x="545" y="140" width="90" height="28" rx="4" fill="#0b0f19" stroke="#38bdf8" stroke-width="1.2"/>
+        <text x="590" y="159" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">H: {$h} мм</text>
+SVG;
+        }
+
+        return implode("\n\n", $lines);
+    }
+
+    /**
      * Генерация качественного технического SVG со схематичным чертежом и размерами.
      */
-    private function generateTechnicalSvg(Product $product, int $w, int $h, string $type, string $code): string
+    private function generateTechnicalSvg(Product $product, ?int $w, ?int $h, string $type, string $code): string
     {
         $hasCamera = $product->camera ? 'ADAS камера' : '';
         $hasRain = $product->rain_sensor ? 'Датчик дождя' : '';
         $hasHeating = ($product->heated_wipers || $product->heated_full) ? 'Электрообогрев' : '';
         $hasVin = $product->vin_window ? 'Окно VIN' : '';
+        $dimensions = $this->dimensionLines($w, $h);
 
         return <<<SVG
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
@@ -300,15 +359,7 @@ class AutoGlassScraper
         <path d="M 275 30 L 325 30 L 320 85 Q 300 98 280 85 Z" fill="#020617" stroke="#38bdf8" stroke-width="1.2"/>
         <circle cx="300" cy="60" r="8" fill="#38bdf8" fill-opacity="0.5"/>
 
-        <!-- Линия ширины (W) -->
-        <line x1="45" y1="320" x2="555" y2="320" stroke="#38bdf8" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-        <rect x="250" y="306" width="100" height="28" rx="4" fill="#0b0f19" stroke="#38bdf8" stroke-width="1.2"/>
-        <text x="300" y="325" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">W: {$w} мм</text>
-
-        <!-- Линия высоты (H) -->
-        <line x1="590" y1="40" x2="590" y2="270" stroke="#38bdf8" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-        <rect x="545" y="140" width="90" height="28" rx="4" fill="#0b0f19" stroke="#38bdf8" stroke-width="1.2"/>
-        <text x="590" y="159" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">H: {$h} мм</text>
+        {$dimensions}
     </g>
 
     <!-- Спецификация внизу -->

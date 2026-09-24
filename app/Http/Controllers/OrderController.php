@@ -27,13 +27,13 @@ class OrderController extends Controller
             $product
         );
 
-        return $this->thanksRedirect($order);
+        return app(StartPayment::class)->redirectAfterOrder($order);
     }
 
     /** Заявка на подбор: товар ещё не выбран, клиент описывает машину. */
     public function selection(StoreOrderRequest $request): RedirectResponse
     {
-        return $this->thanksRedirect(
+        return app(StartPayment::class)->redirectAfterOrder(
             $this->createOrder->handle($request->validated(), OrderSource::Selection)
         );
     }
@@ -58,17 +58,24 @@ class OrderController extends Controller
 
         return view('order.thanks', [
             'number' => $number,
-            // Кнопку оплаты показываем только когда платить действительно есть
-            // за что: сумма посчитана, заказ живой и ещё не оплачен.
+            'order' => $order,
             'payable' => $order !== null && app(StartPayment::class)->isPayable($order),
             'amount' => $order?->total_amount,
         ]);
     }
 
-    private function thanksRedirect(Order $order): RedirectResponse
+    /**
+     * Статус заявки по одноразовому токену, а не по номеру АС-000124.
+     *
+     * Номера идут подряд — по адресу с номером любой желающий листал бы
+     * чужие заявки. UUID в ссылке этого не даёт, и ею можно поделиться.
+     */
+    public function track(Order $order): View
     {
-        session(['last_order_number' => $order->number]);
+        $order->load(['items', 'assignments.servicePoint']);
 
-        return redirect()->route('order.thanks');
+        return view('order.track', [
+            'order' => $order,
+        ]);
     }
 }

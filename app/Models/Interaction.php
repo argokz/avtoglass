@@ -46,11 +46,33 @@ class Interaction extends Model
         return static::create([
             'customer_id' => $order->customer_id,
             'order_id' => $order->id,
-            'user_id' => auth()->id(),
+            'user_id' => self::авторЗаписи(),
             'type' => InteractionType::System,
             'body' => $body,
             'occurred_at' => now(),
         ]);
+    }
+
+    /**
+     * Кто пишет в журнал — и существует ли он ещё.
+     *
+     * Сотрудника уволили и удалили, а вкладка у него осталась открытой:
+     * Auth::id() в этом случае отдаёт идентификатор прямо из сессии, и запись
+     * не проходит по внешнему ключу. Падает при этом не админка, а оформление
+     * заказа у покупателя — там же, в транзакции, где создаётся заявка.
+     *
+     * Лишний SELECT здесь не жалко: журнал пишется по событию заказа,
+     * а не в цикле.
+     */
+    private static function авторЗаписи(): ?int
+    {
+        $id = auth()->user()?->getKey();
+
+        if ($id === null) {
+            return null;
+        }
+
+        return User::query()->whereKey($id)->exists() ? (int) $id : null;
     }
 
     /** Только то, что говорили с клиентом, без системного журнала. */

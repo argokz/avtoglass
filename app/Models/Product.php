@@ -6,7 +6,6 @@ use App\Enums\GlassType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
@@ -18,7 +17,7 @@ class Product extends Model
     public const OPTION_FLAGS = [
         'sun_band' => 'Солнцезащитная полоса',
         'rain_sensor' => 'Датчик дождя',
-        'camera' => 'Камера ADAS',
+        'camera' => 'Камера за стеклом',
         'heated_wipers' => 'Обогрев зоны щёток',
         'heated_full' => 'Полный электрообогрев',
         'heated_rear' => 'Обогрев заднего стекла',
@@ -30,6 +29,18 @@ class Product extends Model
         'rhd' => 'Правый руль',
         'mirror_bracket' => 'Держатель зеркала',
         'vin_window' => 'Окно под VIN',
+    ];
+
+    /**
+     * То, по чему на витрине реально выбирают стекло.
+     * Короткие подписи — чипы, не карточка товара.
+     */
+    public const STOREFRONT_OPTIONS = [
+        'camera' => 'Камера',
+        'rain_sensor' => 'Датчик дождя',
+        'sun_band' => 'Полоса',
+        'heated_wipers' => 'Обогрев щёток',
+        'heated_full' => 'Полный обогрев',
     ];
 
     protected function casts(): array
@@ -79,7 +90,7 @@ class Product extends Model
     public function imageUrl(): ?string
     {
         return $this->image_path
-            ? Storage::disk('public')->url($this->image_path)
+            ? файлВитрины($this->image_path)
             : null;
     }
 
@@ -103,7 +114,51 @@ class Product extends Model
         $this->forceFill([
             'price_min' => $prices->min(),
             'price_max' => $prices->max(),
-            'in_stock' => $offers->sum('stock_qty') > 0,
+            // Свободный остаток: складской qty включает уже обещанное другим.
+            'in_stock' => $offers->contains(fn (Offer $offer) => $offer->available() > 0),
         ])->save();
+    }
+
+    /** Минимальная цена витрины для этого покупателя. */
+    public function sellingPriceMin(?Customer $buyer = null): ?float
+    {
+        if ($buyer?->seesWholesalePrices() !== true) {
+            return $this->price_min !== null ? (float) $this->price_min : null;
+        }
+
+        $offers = $this->relationLoaded('offers')
+            ? $this->offers->where('is_active', true)
+            : $this->offers()->where('is_active', true)->get();
+
+        $prices = $offers
+            ->map(fn (Offer $offer) => $offer->sellingPrice($buyer))
+            ->filter(fn ($price) => $price !== null && $price > 0);
+
+        if ($prices->isNotEmpty()) {
+            return (float) $prices->min();
+        }
+
+        if ($this->price_min === null) {
+            return null;
+        }
+
+        return $buyer->wholesalePrice((float) $this->price_min);
+    }
+
+    public function sellingPriceMax(?Customer $buyer = null): ?float
+    {
+        if ($buyer?->seesWholesalePrices() !== true) {
+            return $this->price_max !== null ? (float) $this->price_max : null;
+        }
+
+        $offers = $this->relationLoaded('offers')
+            ? $this->offers->where('is_active', true)
+            : $this->offers()->where('is_active', true)->get();
+
+        $prices = $offers
+            ->map(fn (Offer $offer) => $offer->sellingPrice($buyer))
+            ->filter(fn ($price) => $price !== null && $price > 0);
+
+        return $prices->isNotEmpty() ? (float) $prices->max() : $this->sellingPriceMin($buyer);
     }
 }

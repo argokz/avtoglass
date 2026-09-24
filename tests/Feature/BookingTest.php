@@ -263,6 +263,7 @@ class BookingTest extends TestCase
             ->call('selectSlot', $slot->toDateTimeString())
             ->set('name', 'Данил')
             ->set('phone', '77015550003')
+            ->set('privacy_consent', true)
             ->call('book')
             ->assertSet('booked', Order::sole()->number);
 
@@ -280,6 +281,33 @@ class BookingTest extends TestCase
         $this->assertSame(0, Assignment::count());
     }
 
+    public function test_ловушка_для_ботов_на_записи_работает(): void
+    {
+        Livewire::test(SlotPicker::class)
+            ->set('pointId', $this->point->id)
+            ->call('selectSlot', $this->firstSlot()->toDateTimeString())
+            ->set('name', 'Данил')
+            ->set('phone', '77015550009')
+            ->set('privacy_consent', true)
+            ->set('website', 'http://spam')
+            ->call('book')
+            ->assertHasErrors('website');
+
+        $this->assertSame(0, Assignment::count());
+    }
+
+    public function test_короткий_телефон_на_записи_отклоняется(): void
+    {
+        Livewire::test(SlotPicker::class)
+            ->set('pointId', $this->point->id)
+            ->call('selectSlot', $this->firstSlot()->toDateTimeString())
+            ->set('name', 'Данил')
+            ->set('phone', '123')
+            ->set('privacy_consent', true)
+            ->call('book')
+            ->assertHasErrors('phone');
+    }
+
     /** Пока заполняли форму, время заняли — об этом надо сказать прямо. */
     public function test_занятое_время_объясняется_человеку(): void
     {
@@ -289,7 +317,8 @@ class BookingTest extends TestCase
             ->set('pointId', $this->point->id)
             ->call('selectSlot', $slot->toDateTimeString())
             ->set('name', 'Данил')
-            ->set('phone', '77015550004');
+            ->set('phone', '77015550004')
+            ->set('privacy_consent', true);
 
         // Кто-то другой успел занять пост
         $this->book($slot);
@@ -297,5 +326,44 @@ class BookingTest extends TestCase
         $component->call('book')
             ->assertSet('booked', null)
             ->assertSee('только что заняли');
+    }
+
+    public function test_запись_пишет_город_поста(): void
+    {
+        $order = $this->book($this->firstSlot());
+
+        $this->assertSame('Караганда', $order->city);
+    }
+
+    /**
+     * Города сейчас один — Караганда, — но механику проверяем на двух:
+     * вторую точку откроют, и тогда пост из чужого города в списке будет
+     * означать поездку в другой город на замену стекла.
+     *
+     * Список задаём в самом тесте, а не берём из настроек: тест про правило,
+     * а не про то, где компания работает сегодня.
+     */
+    public function test_в_другом_городе_пост_не_показывают(): void
+    {
+        settings()->save(['cities' => 'Караганда
+Астана']);
+        session(['city' => 'Астана']);
+
+        Livewire::test(SlotPicker::class)
+            ->assertDontSee('Сервис на Аэрологической')
+            ->assertSee('В городе Астана пока нет поста');
+    }
+
+    public function test_пост_без_города_виден_во_всех_городах(): void
+    {
+        settings()->save(['cities' => 'Караганда
+Астана']);
+
+        $this->point->update(['city' => null]);
+        session(['city' => 'Астана']);
+
+        Livewire::test(SlotPicker::class)
+            ->assertSee('Сервис на Аэрологической')
+            ->assertSee('Когда удобно');
     }
 }

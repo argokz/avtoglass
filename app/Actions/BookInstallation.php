@@ -70,7 +70,11 @@ class BookInstallation
         int $duration,
     ): Order {
         $order = $this->orders->handle(
-            [...$data, 'fulfillment' => FulfillmentType::Installation->value],
+            [
+                ...$data,
+                'fulfillment' => FulfillmentType::Installation->value,
+                'city' => $point->city ?: currentCity(),
+            ],
             OrderSource::Booking,
             $product,
         );
@@ -99,6 +103,11 @@ class BookInstallation
             $order,
             'Клиент записался сам: '.$start->format('d.m.Y H:i').', '.$point->name
         );
+
+        $order->tasks()->latest('id')->first()?->update([
+            'description' => 'Клиент записался на '.$start->format('d.m.Y H:i').', '.$point->name
+                .'. Подтвердить наличие стекла.',
+        ]);
 
         return $order->fresh();
     }

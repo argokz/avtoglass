@@ -144,4 +144,49 @@ class FitmentYearsTest extends TestCase
 
         $this->assertSame(1, Fitment::whereNotNull('year_from')->count());
     }
+
+    /**
+     * Одно стекло приходит из прайса двумя строками: «Camry 70 2017-2021»
+     * и просто «Camry 70». Обе заводят применимость, и после переноса годов
+     * вторая становится точной копией первой — а на этой паре стоит уникальный
+     * ключ, и сборка каталога падала на нём целиком.
+     */
+    public function test_дубль_после_переноса_годов_не_ломает_сборку(): void
+    {
+        $camry = $this->camry();
+        $поколение = CarGeneration::create([
+            'car_model_id' => $camry->id,
+            'name' => 'XV70',
+            'year_from' => 2017,
+            'year_to' => 2021,
+        ]);
+
+        $product = Product::factory()->create();
+
+        // строка с годами
+        Fitment::factory()->create([
+            'product_id' => $product->id,
+            'car_model_id' => $camry->id,
+            'car_generation_id' => $поколение->id,
+            'year_from' => 2017,
+            'year_to' => 2021,
+            'body_type' => null,
+        ]);
+
+        // та же машина, но в прайсе годы не написали
+        $безГодов = Fitment::factory()->create([
+            'product_id' => $product->id,
+            'car_model_id' => $camry->id,
+            'car_generation_id' => $поколение->id,
+            'year_from' => null,
+            'year_to' => null,
+            'body_type' => null,
+        ]);
+
+        $this->artisan('catalog:fill-years')->assertSuccessful();
+
+        // Дубль убран, а не превращён во вторую такую же запись.
+        $this->assertNull(Fitment::find($безГодов->id));
+        $this->assertSame(1, Fitment::where('product_id', $product->id)->count());
+    }
 }

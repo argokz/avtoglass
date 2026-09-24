@@ -6,11 +6,13 @@ use App\Catalog\StockLedger;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Order extends Model
 {
@@ -24,9 +26,11 @@ class Order extends Model
             'status' => OrderStatus::class,
             'source' => OrderSource::class,
             'fulfillment' => FulfillmentType::class,
+            'payment_method' => PaymentMethod::class,
             'total_amount' => 'decimal:2',
             'scheduled_at' => 'datetime',
             'completed_at' => 'datetime',
+            'privacy_accepted_at' => 'datetime',
         ];
     }
 
@@ -102,6 +106,10 @@ class Order extends Model
      */
     protected static function booted(): void
     {
+        static::creating(function (self $order) {
+            $order->public_token ??= (string) Str::uuid();
+        });
+
         static::created(function (self $order) {
             if ($order->number === null) {
                 $order->forceFill(['number' => self::formatNumber($order->id)])->saveQuietly();
@@ -113,6 +121,26 @@ class Order extends Model
     public static function formatNumber(int $id): string
     {
         return 'АС-'.str_pad((string) $id, 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * «ac-12», «12», «АС-000012» — один и тот же номер.
+     *
+     * Человек переписывает его с экрана или на слух, латинской раскладкой
+     * и без ведущих нулей. Отказывать ему в этом месте — значит отправлять
+     * звонить менеджеру ради того, что мы и так понимаем.
+     */
+    public static function normalizeNumber(string $raw): string
+    {
+        $raw = preg_replace('/\s+/u', '', trim($raw)) ?? '';
+        $raw = mb_strtoupper($raw);
+        $raw = preg_replace('/^AC-/', 'АС-', $raw) ?? $raw;
+
+        if (preg_match('/^\d{1,6}$/', $raw)) {
+            return self::formatNumber((int) $raw);
+        }
+
+        return $raw;
     }
 
     /**
@@ -183,5 +211,68 @@ class Order extends Model
         $total = $this->items->sum(fn (OrderItem $item) => (float) $item->price * $item->quantity);
 
         $this->forceFill(['total_amount' => $total ?: null])->save();
+    }
+
+    public function wantsCardPayment(): bool
+    {
+        return $this->payment_method === PaymentMethod::Card;
+    }
+
+    /**
+     * Текст заявки для WhatsApp: и кнопка клиента, и сообщение смене.
+     * Без разметки — WhatsApp её не рисует так, как Telegram.
+     */
+    public function whatsappText(): string
+    {
+        $this->loadMissing(['customer', 'items']);
+
+        $lines = ['Здравствуйте! Заявка '.$this->number.' с сайта.'];
+
+        if ($this->customer) {
+            $lines[] = $this->customer->name.' — '.$this->customer->phone;
+        }
+
+        if ($this->fulfillment) {
+            $lines[] = 'Нужно: '.$this->fulfillment->label();
+        }
+
+        if (filled($this->address)) {
+            $lines[] = 'Адрес: '.$this->address.(filled($this->city) ? ', '.$this->city : '');
+        } elseif (filled($this->city)) {
+            $lines[] = 'Город: '.$this->city;
+        }
+
+        if ($this->payment_method) {
+            $lines[] = 'Оплата: '.$this->payment_method->label();
+        }
+
+        if ($this->items->isNotEmpty()) {
+            $lines[] = 'Позиции: '.$this->items->pluck('name')->implode(', ');
+        }
+
+        if ($this->total_amount !== null) {
+            $lines[] = 'Сумма: '.number_format((float) $this->total_amount, 0, ',', ' ').' ₸';
+        }
+
+        if (filled($this->comment)) {
+            $lines[] = $this->comment;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    public function whatsappUrl(): ?string
+    {
+        if (! settings()->enabled('whatsapp')) {
+            return null;
+        }
+
+        $phone = settings()->whatsapp();
+
+        if (! filled($phone)) {
+            return null;
+        }
+
+        return 'https://wa.me/'.$phone.'?text='.rawurlencode($this->whatsappText());
     }
 }

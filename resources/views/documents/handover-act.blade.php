@@ -15,7 +15,7 @@
     <tr>
         <th style="width:120px">Передал</th>
         <td>
-            {{ config('company.requisites.legal_name') }}
+            {{ settings()->requisites()['legal_name'] }}
             @if ($assignment?->assignee)
                 <br><span class="small muted">{{ $assignment->assignee->name }}</span>
             @endif

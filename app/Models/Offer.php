@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Catalog\StockLedger;
+use App\Domain\Shared\Casts\ZonedTimestamp;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +22,9 @@ class Offer extends Model
             'price_retail' => 'decimal:2',
             'is_active' => 'boolean',
             'price_updated_at' => 'datetime',
+            'auto_checkout_enabled' => 'boolean',
+            'stock_verified_at' => ZonedTimestamp::class,
+            'price_valid_until' => ZonedTimestamp::class,
         ];
     }
 
@@ -50,15 +54,52 @@ class Offer extends Model
         return app(StockLedger::class)->available($this);
     }
 
-    /** Розница из оптовой цены по наценке поставщика. */
+    /**
+     * Розница из оптовой цены по наценке поставщика.
+     *
+     * Наценка по умолчанию нулевая: витрина показывает ровно ту цену, что
+     * стоит в прайсе. Проценты задаются в карточке поставщика — когда там
+     * появятся настоящие правила, цены пересчитаются сами.
+     */
     public function calculateRetail(): ?float
     {
         if ($this->price_wholesale === null) {
             return null;
         }
 
-        $markup = (float) ($this->supplier?->markup_percent ?? 30);
+        $markup = (float) ($this->supplier?->markup_percent ?? 0);
+        $wholesale = (float) $this->price_wholesale;
 
-        return round((float) $this->price_wholesale * (1 + $markup / 100), -1);
+        // Без наценки округлять нечего: цена и есть прайсовая.
+        if ($markup <= 0) {
+            return $wholesale;
+        }
+
+        return round($wholesale * (1 + $markup / 100), -1);
+    }
+
+    /**
+     * Цена для конкретного покупателя.
+     *
+     * Закуп (price_wholesale) — себестоимость, её на витрину не отдаём.
+     * Опту считаем розницу минус скидка менеджера, но не дешевле закупа.
+     */
+    public function sellingPrice(?Customer $buyer = null): ?float
+    {
+        if ($this->price_retail === null) {
+            return null;
+        }
+
+        $retail = (float) $this->price_retail;
+
+        if ($retail <= 0) {
+            return null;
+        }
+
+        if ($buyer?->seesWholesalePrices() !== true) {
+            return $retail;
+        }
+
+        return $buyer->wholesalePrice($retail, $this->price_wholesale !== null ? (float) $this->price_wholesale : null);
     }
 }

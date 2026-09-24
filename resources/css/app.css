@@ -7,109 +7,145 @@
  * Токены семантические, а не «цвет по имени цвета»: в разметке стоит bg-surface,
  * а не bg-white. Благодаря этому тёмная тема ниже переопределяет одни переменные
  * и не требует ни одного dark:-класса в шаблонах.
+ *
+ * Направление: нейтральная холодная база + яркий маркетплейс-акцент.
+ * Красный — единственный насыщенный цвет (преемственность с вывеской).
  */
 @theme {
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-display: 'Manrope', 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-    /* поверхности */
-    --color-canvas: oklch(98.4% 0.003 250);
+    /*
+     * Холодные нейтралы (hue ~250): маркетплейсная чистота, без тёплого
+     * подтона. Хрома минимальная — это графит, а не синева.
+     */
+    --color-canvas: oklch(97.2% 0.004 250);
     --color-surface: oklch(100% 0 0);
-    --color-sunken: oklch(96.2% 0.006 250);
-    --color-line: oklch(91% 0.008 250);
-    --color-line-strong: oklch(84% 0.012 250);
+    --color-sunken: oklch(95.5% 0.005 250);
+    --color-line: oklch(90% 0.006 250);
+    --color-line-strong: oklch(82% 0.01 250);
 
     /* текст */
-    --color-ink: oklch(21% 0.02 255);
-    --color-muted: oklch(48% 0.017 255);
-    --color-faint: oklch(64% 0.014 255);
+        --color-ink: oklch(18% 0.012 250);
+    --color-muted: oklch(38% 0.014 250);
+    --color-faint: oklch(48% 0.012 250);
 
-    /* фирменный синий — кнопки и ссылки */
-    --color-brand: oklch(54% 0.19 258);
-    --color-brand-hover: oklch(48% 0.19 258);
-    --color-brand-soft: oklch(95.5% 0.03 258);
-    --color-brand-ink: oklch(42% 0.17 258);
+    /*
+     * Фирменный красный — ярче и чище: на маркетплейсе акцент должен
+     * «кричать» в CTA и ценах, а не прятаться. От вывески #CC2424.
+     */
+    --color-brand: oklch(52% 0.195 27);
+    --color-brand-hover: oklch(46% 0.185 27);
+    --color-brand-soft: oklch(96% 0.028 28);
+    --color-brand-ink: oklch(44% 0.175 27);
     --color-on-brand: oklch(100% 0 0);
 
-    /* акцент — стекло, подсветка цифр и бейджей */
-    --color-accent: oklch(72% 0.13 205);
-    --color-accent-soft: oklch(95% 0.035 205);
-    --color-accent-ink: oklch(45% 0.10 205);
+    /* WhatsApp — токен вместо сырого hex */
+    --color-whatsapp: oklch(72% 0.17 145);
+    --color-whatsapp-hover: oklch(66% 0.16 145);
 
-    /* предупреждения: калибровка ADAS, «цена по запросу» */
-    --color-warn: oklch(76% 0.15 75);
-    --color-warn-soft: oklch(96.5% 0.04 85);
-    --color-warn-ink: oklch(45% 0.10 65);
+    /*
+     * Акцент — стекло: бейджи, подсветка цифр. Тихий, малой хромы.
+     */
+    --color-accent: oklch(58% 0.07 240);
+    --color-accent-soft: oklch(95% 0.02 240);
+    --color-accent-ink: oklch(40% 0.06 240);
 
-    /* тёмные блоки — герой и подвал */
-    --color-night: oklch(21% 0.03 260);
-    --color-night-2: oklch(26% 0.035 260);
-    --color-on-night: oklch(97% 0.005 250);
-    --color-on-night-muted: oklch(74% 0.015 255);
+    /* Успех: наличие, оплачено */
+    --color-ok: oklch(55% 0.13 152);
+    --color-ok-soft: oklch(95% 0.035 152);
+    --color-ok-ink: oklch(40% 0.1 152);
 
-    --radius-card: 1rem;
+    /* Предупреждения: ADAS, цена по запросу */
+    --color-warn: oklch(78% 0.145 88);
+    --color-warn-soft: oklch(96.5% 0.04 92);
+    --color-warn-ink: oklch(42% 0.1 80);
+
+    /* тёмные блоки — подвал */
+    --color-night: oklch(18% 0.014 250);
+    --color-night-2: oklch(24% 0.016 250);
+    --color-on-night: oklch(97% 0.004 250);
+    --color-on-night-muted: oklch(82% 0.01 250);
+
+    --radius-card: 1.25rem;
+    --radius-lg: 1.5rem;
     --radius-pill: 999px;
 
-    --shadow-card: 0 1px 2px oklch(21% 0.02 255 / 0.04), 0 8px 24px -12px oklch(21% 0.02 255 / 0.12);
-    --shadow-lift: 0 2px 4px oklch(21% 0.02 255 / 0.05), 0 16px 32px -12px oklch(21% 0.02 255 / 0.18);
+    --shadow-card: 0 1px 3px oklch(18% 0.012 250 / 0.04), 0 8px 28px -10px oklch(18% 0.012 250 / 0.1);
+    --shadow-lift: 0 4px 8px oklch(18% 0.012 250 / 0.06), 0 20px 40px -12px oklch(18% 0.012 250 / 0.16);
+    --shadow-pop: 0 6px 16px oklch(52% 0.195 27 / 0.25), 0 2px 4px oklch(52% 0.195 27 / 0.12);
 }
 
 /*
- * Тёмная тема по системной настройке. Меняем только значения переменных —
+ * Тема выбирается до загрузки CSS: системная настройка или предпочтение пользователя.
+ * Меняем только значения переменных —
  * разметка остаётся прежней.
  */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-canvas: oklch(17% 0.02 260);
-        --color-surface: oklch(21.5% 0.022 260);
-        --color-sunken: oklch(25% 0.024 260);
-        --color-line: oklch(30% 0.025 260);
-        --color-line-strong: oklch(38% 0.03 260);
+:root[data-theme="dark"] {
+        --color-canvas: oklch(14% 0.01 250);
+        --color-surface: oklch(19% 0.012 250);
+        --color-sunken: oklch(23% 0.014 250);
+        --color-line: oklch(28% 0.014 250);
+        --color-line-strong: oklch(36% 0.016 250);
 
-        --color-ink: oklch(96% 0.005 250);
-        --color-muted: oklch(74% 0.015 255);
-        --color-faint: oklch(60% 0.018 255);
+        --color-ink: oklch(96% 0.004 250);
+        --color-muted: oklch(82% 0.01 250);
+        --color-faint: oklch(72% 0.012 250);
 
-        --color-brand: oklch(64% 0.17 258);
-        --color-brand-hover: oklch(70% 0.16 258);
-        --color-brand-soft: oklch(30% 0.06 258);
-        --color-brand-ink: oklch(82% 0.10 258);
+        --color-brand: oklch(65% 0.18 27);
+        --color-brand-hover: oklch(70% 0.165 27);
+        --color-brand-soft: oklch(28% 0.07 27);
+        --color-brand-ink: oklch(82% 0.1 27);
+        --color-on-brand: oklch(14% 0.03 30);
 
-        --color-accent-soft: oklch(30% 0.05 205);
-        --color-accent-ink: oklch(82% 0.09 205);
+        --color-whatsapp: oklch(72% 0.17 145);
+        --color-whatsapp-hover: oklch(78% 0.15 145);
 
-        --color-warn-soft: oklch(30% 0.05 75);
-        --color-warn-ink: oklch(87% 0.09 80);
+        --color-accent: oklch(70% 0.06 240);
+        --color-accent-soft: oklch(27% 0.03 240);
+        --color-accent-ink: oklch(82% 0.05 240);
 
-        --color-night: oklch(14% 0.02 260);
-        --color-night-2: oklch(19% 0.025 260);
+        --color-ok: oklch(70% 0.12 152);
+        --color-ok-soft: oklch(27% 0.05 152);
+        --color-ok-ink: oklch(84% 0.1 152);
 
-        --shadow-card: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px -12px oklch(0% 0 0 / 0.6);
-        --shadow-lift: 0 2px 4px oklch(0% 0 0 / 0.35), 0 16px 32px -12px oklch(0% 0 0 / 0.7);
-    }
+        --color-warn-soft: oklch(28% 0.05 88);
+        --color-warn-ink: oklch(88% 0.09 90);
+
+        --color-night: oklch(12% 0.012 250);
+        --color-night-2: oklch(17% 0.014 250);
+
+        --shadow-card: 0 1px 3px oklch(0% 0 0 / 0.35), 0 8px 28px -10px oklch(0% 0 0 / 0.55);
+        --shadow-lift: 0 4px 8px oklch(0% 0 0 / 0.4), 0 20px 40px -12px oklch(0% 0 0 / 0.65);
+        --shadow-pop: 0 6px 16px oklch(65% 0.18 27 / 0.3), 0 2px 4px oklch(65% 0.18 27 / 0.15);
 }
+
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 
 @layer base {
     html {
         scroll-behavior: smooth;
         -webkit-tap-highlight-color: transparent;
+        color-scheme: light;
     }
 
     body {
         background-color: var(--color-canvas);
         color: var(--color-ink);
+        overflow-x: clip;
+        text-wrap: pretty;
     }
 
     h1, h2, h3 {
         font-family: var(--font-display);
-        letter-spacing: -0.02em;
+        letter-spacing: -0.025em;
     }
 
-    /* Управление с клавиатуры должно быть видно — но только при навигации с неё. */
     :focus-visible {
         outline: 2px solid var(--color-brand);
         outline-offset: 2px;
-        border-radius: 4px;
+        border-radius: 6px;
     }
 
     ::selection {
@@ -119,7 +155,354 @@
 }
 
 @layer components {
-    /* Ряд фильтров на телефоне уезжает вбок вместо того, чтобы ломать сетку. */
+    /* ── Кнопки ─────────────────────────────────────────────── */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        border-radius: var(--radius-pill);
+        font-size: 0.875rem;
+        font-weight: 700;
+        line-height: 1.25;
+        padding: 0.75rem 1.5rem;
+        transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.15s;
+        cursor: pointer;
+        white-space: nowrap;
+        border: none;
+        text-decoration: none;
+    }
+
+    .purchase-prototype .btn {
+        white-space: normal;
+        max-width: 100%;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .btn:active:not(:disabled) {
+        transform: scale(0.97);
+    }
+
+    .btn:disabled,
+    .btn.is-loading {
+        opacity: 0.65;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    .btn-primary {
+        background: var(--color-brand);
+        color: var(--color-on-brand);
+        box-shadow: var(--shadow-pop);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: var(--color-brand-hover);
+    }
+
+    .btn-outline {
+        background: var(--color-surface);
+        color: var(--color-ink);
+        border: 1.5px solid var(--color-line-strong);
+        box-shadow: none;
+    }
+
+    .btn-outline:hover:not(:disabled) {
+        border-color: var(--color-brand);
+        color: var(--color-brand-ink);
+        background: var(--color-brand-soft);
+    }
+
+    .btn-ghost {
+        background: transparent;
+        color: var(--color-muted);
+        box-shadow: none;
+        padding-inline: 0.75rem;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+        background: var(--color-sunken);
+        color: var(--color-ink);
+    }
+
+    .btn-lg {
+        padding: 1rem 2rem;
+        font-size: 1rem;
+        border-radius: 1rem;
+        white-space: normal;
+        text-align: center;
+    }
+
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.8125rem;
+    }
+
+    .btn-whatsapp {
+        background: var(--color-whatsapp);
+        color: white;
+        box-shadow: 0 4px 14px oklch(72% 0.17 145 / 0.35);
+    }
+
+    .btn-whatsapp:hover:not(:disabled) {
+        background: var(--color-whatsapp-hover);
+    }
+
+    /* Спиннер внутри кнопки при is-loading */
+    .btn.is-loading::before {
+        content: '';
+        width: 1em;
+        height: 1em;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        flex-shrink: 0;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* ── Инпуты ─────────────────────────────────────────────── */
+    .input,
+    .select {
+        width: 100%;
+        border-radius: 0.875rem;
+        border: 1.5px solid var(--color-line);
+        background: var(--color-surface);
+        padding: 0.875rem 1rem;
+        font-size: 1rem;
+        color: var(--color-ink);
+        transition: border-color 0.15s, box-shadow 0.15s;
+        color-scheme: inherit;
+    }
+
+    .input::placeholder {
+        color: var(--color-faint);
+    }
+
+    .input:focus,
+    .select:focus {
+        outline: none;
+        border-color: var(--color-brand);
+        box-shadow: 0 0 0 3px var(--color-brand-soft);
+    }
+
+    .input-error {
+        border-color: var(--color-brand);
+    }
+
+    .select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.75rem center;
+        background-size: 1.1rem;
+        padding-right: 2.5rem;
+    }
+
+    .select:disabled {
+        background-color: var(--color-sunken);
+        color: var(--color-faint);
+        cursor: not-allowed;
+    }
+
+    :root[data-theme="dark"] .select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23c5cad3' stroke-width='2'%3E%3Cpath stroke-linecap='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+
+    /* ── Карточка ───────────────────────────────────────────── */
+    .card {
+        border-radius: var(--radius-card);
+        border: 1px solid var(--color-line);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-card);
+        transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+    }
+
+    .card-hover:hover {
+        transform: translateY(-2px);
+        border-color: color-mix(in oklch, var(--color-brand) 35%, var(--color-line));
+        box-shadow: var(--shadow-lift);
+    }
+
+    /* ── Бейджи ─────────────────────────────────────────────── */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border-radius: var(--radius-pill);
+        padding: 0.3rem 0.7rem;
+        font-size: 0.6875rem;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.01em;
+    }
+
+    .badge-brand {
+        background: var(--color-brand);
+        color: var(--color-on-brand);
+    }
+
+    .badge-ok {
+        background: var(--color-ok-soft);
+        color: var(--color-ok-ink);
+    }
+
+    .badge-warn {
+        background: var(--color-warn-soft);
+        color: var(--color-warn-ink);
+    }
+
+    .badge-muted {
+        background: var(--color-sunken);
+        color: var(--color-muted);
+    }
+
+    .badge-accent {
+        background: var(--color-accent-soft);
+        color: var(--color-accent-ink);
+    }
+
+    /* ── Чипы фильтров ──────────────────────────────────────── */
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: var(--radius-pill);
+        border: 1.5px solid var(--color-line);
+        background: var(--color-surface);
+        padding: 0.55rem 1rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--color-muted);
+        transition: border-color 0.15s, background 0.15s, color 0.15s;
+        cursor: pointer;
+        white-space: nowrap;
+        text-decoration: none;
+    }
+
+    .chip:hover {
+        border-color: var(--color-line-strong);
+        color: var(--color-ink);
+    }
+
+    .chip-active,
+    .chip[aria-pressed="true"] {
+        border-color: var(--color-brand);
+        background: var(--color-brand-soft);
+        color: var(--color-brand-ink);
+    }
+
+    /* ── Skeleton ───────────────────────────────────────────── */
+    .skeleton {
+        border-radius: 0.75rem;
+        background: linear-gradient(
+            90deg,
+            var(--color-sunken) 25%,
+            var(--color-line) 50%,
+            var(--color-sunken) 75%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.4s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    /* ── Toast ──────────────────────────────────────────────── */
+    .toast-container {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-width: min(24rem, calc(100vw - 2rem));
+        pointer-events: none;
+    }
+
+    .toast {
+        pointer-events: auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        border-radius: 1rem;
+        border: 1px solid var(--color-line);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-lift);
+        padding: 0.875rem 1rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        animation: toast-in 0.25s ease-out;
+    }
+
+    .toast-ok {
+        border-color: color-mix(in oklch, var(--color-ok) 40%, var(--color-line));
+    }
+
+    .toast-ok .toast-icon {
+        color: var(--color-ok);
+    }
+
+    .toast-error {
+        border-color: color-mix(in oklch, var(--color-brand) 40%, var(--color-line));
+    }
+
+    .toast-error .toast-icon {
+        color: var(--color-brand);
+    }
+
+    .toast-out {
+        animation: toast-out 0.2s ease-in forwards;
+    }
+
+    @keyframes toast-in {
+        from { opacity: 0; transform: translateY(-0.5rem) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes toast-out {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(-0.5rem); }
+    }
+
+    /* ── Reveal при скролле ─────────────────────────────────── */
+    .reveal {
+        opacity: 0;
+        transform: translateY(1rem);
+        transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+
+    .reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    /* ── Цена ───────────────────────────────────────────────── */
+    .price {
+        font-family: var(--font-display);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+        color: var(--color-ink);
+    }
+
+    .price-lg {
+        font-size: 1.75rem;
+        line-height: 1;
+    }
+
+    .price-brand {
+        color: var(--color-brand-ink);
+    }
+
+    /* ── Ряд фильтров ───────────────────────────────────────── */
     .scroll-row {
         display: flex;
         gap: 0.5rem;
@@ -138,9 +521,140 @@
         scroll-snap-align: start;
         flex: 0 0 auto;
     }
+
+    .nav-menu > summary {
+        list-style: none;
+    }
+
+    .nav-menu > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .fab-whatsapp {
+        right: 1rem;
+        bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+        background: var(--color-whatsapp) !important;
+    }
+
+    .fab-whatsapp:hover {
+        background: var(--color-whatsapp-hover) !important;
+    }
+
+    .has-mobile-cta .fab-whatsapp {
+        bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .has-mobile-cta [data-ai-chat] {
+        bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    /* Липкая панель «цена + купить» не должна перекрывать конец страницы */
+    @media (max-width: 1023.98px) {
+        .has-mobile-cta main {
+            padding-bottom: 5rem;
+        }
+    }
+
+    /* Степпер количества */
+    .qty-stepper {
+        display: inline-flex;
+        align-items: center;
+        border: 1.5px solid var(--color-line);
+        border-radius: var(--radius-pill);
+        overflow: hidden;
+        background: var(--color-surface);
+    }
+
+    .qty-stepper button {
+        display: grid;
+        place-items: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        background: transparent;
+        border: none;
+        color: var(--color-ink);
+        font-size: 1.1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.1s;
+    }
+
+    .qty-stepper button:hover {
+        background: var(--color-sunken);
+    }
+
+    .qty-stepper span,
+    .qty-stepper input {
+        min-width: 2rem;
+        text-align: center;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        border: none;
+        background: transparent;
+        font-size: 0.875rem;
+    }
+
+    /* Нумерованный шаг пути: машина → стекло → получение */
+    .step-num {
+        display: grid;
+        place-items: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        flex-shrink: 0;
+        border-radius: 999px;
+        background: var(--color-brand-soft);
+        color: var(--color-brand-ink);
+        font-family: var(--font-display);
+        font-size: 0.75rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    body.is-chat-home {
+        background: var(--color-sunken);
+    }
 }
 
-/* Уважаем системную настройку «меньше движения». */
+.purchase-prototype {
+    padding-bottom: calc(var(--purchase-action-space, 0px) + 1rem);
+}
+
+html:has(.purchase-prototype) {
+    scroll-padding-bottom: calc(var(--purchase-action-space, 0px) + 1rem);
+}
+
+.purchase-action-bar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    display: grid;
+    gap: .5rem;
+    border-top: 1px solid var(--color-line);
+    background: var(--color-surface);
+    padding: .75rem 1rem max(.75rem, env(safe-area-inset-bottom));
+    box-shadow: var(--shadow-card);
+}
+
+.purchase-action-total {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .25rem .75rem;
+}
+
+.purchase-action-bar[data-keyboard-hidden] { display: none; }
+
+@media (min-width: 1024px) {
+    .purchase-action-bar {
+        position: static;
+        padding: 0;
+        border: 0;
+        box-shadow: none;
+    }
+    .purchase-action-total { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
@@ -149,5 +663,10 @@
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
         transition-duration: 0.01ms !important;
+    }
+
+    .reveal {
+        opacity: 1;
+        transform: none;
     }
 }

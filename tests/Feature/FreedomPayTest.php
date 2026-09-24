@@ -270,4 +270,49 @@ class FreedomPayTest extends TestCase
 
         $this->assertSame(PaymentStatus::Pending, $payment->fresh()->status);
     }
+
+    public function test_возврат_без_pg_payment_id_не_ходит_в_банк(): void
+    {
+        Http::fake();
+
+        $this->assertFalse($this->gateway->refund($this->payment()));
+        Http::assertNothingSent();
+    }
+
+    public function test_возврат_подписывает_revoke(): void
+    {
+        $payment = $this->payment(15500);
+        $payment->update(['external_id' => 'pg-42']);
+
+        Http::fake([
+            'https://api.freedompay.kz/revoke.php' => Http::response(
+                '<?xml version="1.0"?><response><pg_status>ok</pg_status></response>'
+            ),
+        ]);
+
+        $this->assertTrue($this->gateway->refund($payment));
+
+        Http::assertSent(function ($request) {
+            $data = $request->data();
+
+            return str_contains($request->url(), 'revoke.php')
+                && ($data['pg_payment_id'] ?? null) === 'pg-42'
+                && ($data['pg_refund_amount'] ?? null) === '15500.00'
+                && filled($data['pg_sig'] ?? null);
+        });
+    }
+
+    public function test_отказ_revoke_не_считается_успехом(): void
+    {
+        $payment = $this->payment();
+        $payment->update(['external_id' => 'pg-42']);
+
+        Http::fake([
+            'https://api.freedompay.kz/revoke.php' => Http::response(
+                '<?xml version="1.0"?><response><pg_status>error</pg_status><pg_error_description>denied</pg_error_description></response>'
+            ),
+        ]);
+
+        $this->assertFalse($this->gateway->refund($payment));
+    }
 }

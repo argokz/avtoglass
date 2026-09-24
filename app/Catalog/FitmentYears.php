@@ -39,11 +39,38 @@ class FitmentYears
                         continue;   // поколение само без годов — переносить нечего
                     }
 
+                    $yearFrom = $generation->year_from;
+                    // Конец берём достроенный: у поколения его тоже почти
+                    // никогда не пишут, но следующее поколение его задаёт.
+                    $yearTo = $fitment->year_to ?: $generation->effectiveYearTo();
+
+                    /*
+                     * Одно стекло приходит из прайса двумя строками: в одной
+                     * годы написаны, в другой нет. Обе заводят применимость,
+                     * и после заполнения годами вторая становится точной копией
+                     * первой — а на этой паре стоит уникальный ключ.
+                     *
+                     * Дубль не обновляем, а убираем: это та же применимость,
+                     * просто пришедшая без годов.
+                     */
+                    $двойник = Fitment::query()
+                        ->where('product_id', $fitment->product_id)
+                        ->where('car_model_id', $fitment->car_model_id)
+                        ->where('year_from', $yearFrom)
+                        ->where('year_to', $yearTo)
+                        ->where('body_type', $fitment->body_type)
+                        ->whereKeyNot($fitment->getKey())
+                        ->exists();
+
+                    if ($двойник) {
+                        $fitment->delete();
+
+                        continue;
+                    }
+
                     $fitment->update([
-                        'year_from' => $generation->year_from,
-                        // Конец берём достроенный: у поколения его тоже почти
-                        // никогда не пишут, но следующее поколение его задаёт.
-                        'year_to' => $fitment->year_to ?: $generation->effectiveYearTo(),
+                        'year_from' => $yearFrom,
+                        'year_to' => $yearTo,
                     ]);
 
                     $filled++;

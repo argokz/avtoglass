@@ -2,16 +2,40 @@
 
 namespace App\Models;
 
+use App\Enums\WholesaleStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Customer extends Model
 {
     use HasFactory;
 
     protected $guarded = [];
+
+    protected $attributes = [
+        'wholesale_status' => WholesaleStatus::Retail->value,
+    ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Customer $customer): void {
+            if ($customer->wholesale_status === WholesaleStatus::Wholesale && $customer->wholesale_approved_at === null) {
+                $customer->wholesale_approved_at = now();
+            }
+        });
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'wholesale_status' => WholesaleStatus::class,
+            'wholesale_requested_at' => 'datetime',
+            'wholesale_approved_at' => 'datetime',
+        ];
+    }
 
     public function orders(): HasMany
     {
@@ -31,6 +55,113 @@ class Customer extends Model
     public function carModel(): BelongsTo
     {
         return $this->belongsTo(CarModel::class);
+    }
+
+    public function account(): HasOne
+    {
+        return $this->hasOne(User::class);
+    }
+
+    public function seesWholesalePrices(): bool
+    {
+        return $this->wholesale_status?->seesWholesalePrices() === true;
+    }
+
+    /**
+     * Заявка на опт. Цены не меняются, пока менеджер не переведёт статус.
+     */
+    public function requestWholesale(string $company, ?string $bin = null): void
+    {
+        if ($this->seesWholesalePrices()) {
+            return;
+        }
+
+        $alreadyPending = $this->wholesale_status === WholesaleStatus::Pending;
+
+        $this->forceFill([
+            'wholesale_status' => WholesaleStatus::Pending,
+            'company_name' => trim($company) ?: $this->company_name,
+            'bin' => $bin ?: $this->bin,
+            'wholesale_requested_at' => $this->wholesale_requested_at ?? now(),
+        ])->save();
+
+        if ($alreadyPending) {
+            return;
+        }
+
+        Task::create([
+            'customer_id' => $this->id,
+            'title' => 'Опт: '.($this->company_name ?: $this->name),
+            'description' => trim(implode("\n", array_filter([
+                'Клиент просит оптовые цены.',
+                $this->company_name ? 'Организация: '.$this->company_name : null,
+                $this->bin ? 'БИН/ИИН: '.$this->bin : null,
+                'Телефон: '.$this->phone,
+            ]))),
+            'due_at' => now()->addHours(4),
+        ]);
+    }
+
+    public function approveWholesale(?int $discountPercent = null): void
+    {
+        $this->forceFill([
+            'wholesale_status' => WholesaleStatus::Wholesale,
+            'wholesale_discount_percent' => $discountPercent ?? $this->wholesale_discount_percent,
+            'wholesale_approved_at' => $this->wholesale_approved_at ?? now(),
+        ])->save();
+    }
+
+    /**
+     * Оптовая цена от розницы. Пол не даём пробить: иначе продаём ниже закупа.
+     */
+    public function wholesalePrice(float $retail, ?float $cost = null): float
+    {
+        $discount = max(0, min(40, (int) ($this->wholesale_discount_percent ?? 0)));
+        $price = $discount > 0 ? round($retail * (1 - $discount / 100), -1) : $retail;
+
+        if ($cost !== null && $cost > 0) {
+            $price = max($price, $cost);
+        }
+
+        return $price;
+    }
+
+    public function carLabel(): ?string
+    {
+        $parts = array_filter([
+            $this->carModel
+                ? trim(($this->carModel->brand?->name ?? '').' '.$this->carModel->name)
+                : null,
+            $this->car_plate ? 'госномер '.$this->car_plate : null,
+            $this->vin ? 'VIN '.$this->vin : null,
+        ]);
+
+        return $parts ? implode(' · ', $parts) : null;
+    }
+
+    /**
+     * Запоминает адрес и способ получения после заявки.
+     * Перезаписываем последние значения: человек обычно ездит по одному адресу.
+     */
+    public function rememberDelivery(?string $address, ?string $city, ?string $fulfillment): void
+    {
+        $updates = [];
+
+        if (is_string($address) && trim($address) !== '') {
+            $updates['default_address'] = trim($address);
+        }
+
+        if (is_string($city) && trim($city) !== '') {
+            $updates['default_city'] = trim($city);
+        }
+
+        if (is_string($fulfillment) && $fulfillment !== '') {
+            $updates['preferred_fulfillment'] = $fulfillment;
+        }
+
+        if ($updates !== []) {
+            $this->update($updates);
+        }
     }
 
     /**

@@ -20,6 +20,8 @@ class WebkassaClient
     /** Продажа. У Webkassa операции нумерованные: 2 — продажа, 3 — возврат. */
     private const OPERATION_SALE = 2;
 
+    private const OPERATION_RETURN = 3;
+
     /** Тип оплаты в чеке: наличные — 0, карта — 1. */
     private const PAYMENT_CASH = 0;
 
@@ -51,31 +53,54 @@ class WebkassaClient
      */
     public function issue(Receipt $receipt): ?array
     {
+        return $this->submit($receipt, self::OPERATION_SALE);
+    }
+
+    /**
+     * Чек возврата. Отдельная операция, а не отмена продажи: налоговая
+     * должна видеть оба документа, иначе кассовая книга не сойдётся.
+     *
+     * @return array{check_number:string,ticket_url:?string,datetime:?string,raw:array}|null
+     */
+    public function refund(Receipt $receipt, ?Receipt $original = null): ?array
+    {
+        return $this->submit($receipt, self::OPERATION_RETURN, $original);
+    }
+
+    /**
+     * @return array{check_number:string,ticket_url:?string,datetime:?string,raw:array}|null
+     */
+    private function submit(Receipt $receipt, int $operation, ?Receipt $original = null): ?array
+    {
+        $receipt->loadMissing(['order', 'payment']);
+
         $token = $this->token();
 
         if ($token === null) {
             return null;
         }
 
-        $response = Http::timeout(30)->post($this->url('Check'), [
+        $payload = [
             'Token' => $token,
             'CashboxUniqueNumber' => config('fiscal.webkassa.cashbox'),
-            'OperationType' => self::OPERATION_SALE,
+            'OperationType' => $operation,
             'Positions' => $this->positions($receipt),
             'Payments' => [[
                 'Sum' => round((float) $receipt->amount, 2),
-                // Тип берём из платежа: иначе в отчётах ОФД вся выручка
-                // будет выглядеть безналичной, включая принятую курьером.
                 'PaymentType' => $receipt->payment?->isCash()
                     ? self::PAYMENT_CASH
                     : self::PAYMENT_CARD,
             ]],
             'Change' => 0,
             'RoundType' => 0,
-            // Номер заказа в чеке — по нему покупатель и бухгалтерия
-            // связывают чек с заявкой.
             'ExternalCheckNumber' => $receipt->order->number,
-        ]);
+        ];
+
+        if ($original?->check_number) {
+            $payload['ExternalCheckNumber'] = $receipt->order->number.'-R';
+        }
+
+        $response = Http::timeout(30)->post($this->url('Check'), $payload);
 
         $data = $response->json('Data');
 

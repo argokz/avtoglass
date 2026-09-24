@@ -38,7 +38,9 @@ return [
             'test' => [
                 'oauth' => 'https://test-epay-oauth.epayment.kz/oauth2/token',
                 'api' => 'https://testepay.homebank.kz/api',
-                'widget' => 'https://test-epay.homebank.kz/payform/payment-api.js',
+                // Песочница виджета переехала с test-epay.homebank.kz —
+                // тот хост больше не открывается, форма карты не поднималась.
+                'widget' => 'https://test-epay.epayment.kz/payform/payment-api.js',
             ],
             'live' => [
                 'oauth' => 'https://epay-oauth.homebank.kz/oauth2/token',
@@ -48,12 +50,21 @@ return [
         ],
     ],
 
-    'freedompay' => [
-        'merchant_id' => env('FREEDOMPAY_MERCHANT_ID'),
-        'secret' => env('FREEDOMPAY_SECRET'),
-        // Пока не подписан акт, мерчант в тестовом режиме — банк требует
-        // передавать это признаком в каждом запросе.
-        'test_mode' => env('FREEDOMPAY_TEST_MODE', true),
-        'init_url' => 'https://api.freedompay.kz/init_payment.php',
-    ],
+        'freedompay' => [
+            'merchant_id' => env('FREEDOMPAY_MERCHANT_ID'),
+            'secret' => env('FREEDOMPAY_SECRET'),
+            // Пока не подписан акт, мерчант в тестовом режиме — банк требует
+            // передавать это признаком в каждом запросе.
+            'test_mode' => env('FREEDOMPAY_TEST_MODE', true),
+            'init_url' => 'https://api.freedompay.kz/init_payment.php',
+            'revoke_url' => 'https://api.freedompay.kz/revoke.php',
+        ],
+
+        'kaspi' => [
+            'merchant_id' => env('KASPI_MERCHANT_ID', 'test_merchant'),
+            'api_key' => env('KASPI_API_KEY', 'test_api_key'),
+            'test_mode' => env('KASPI_TEST_MODE', true),
+            'api_url' => env('KASPI_API_URL', 'https://api.kaspi.kz/pay/v1/orders'),
+            'refund_url' => env('KASPI_REFUND_URL'),
+        ],
 ];

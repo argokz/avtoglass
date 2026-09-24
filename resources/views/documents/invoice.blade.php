@@ -5,18 +5,25 @@
 
 @section('content')
 
+@php($requisites = settings()->requisites())
 <h2>Поставщик</h2>
 <table>
-    <tr><th style="width:150px">Наименование</th><td>{{ config('company.requisites.legal_name') }}</td></tr>
-    <tr><th>БИН</th><td>{{ config('company.requisites.bin') ?: '—' }}</td></tr>
-    <tr><th>ИИК</th><td>{{ config('company.requisites.iik') ?: '—' }}</td></tr>
-    <tr><th>Банк</th><td>{{ config('company.requisites.bank') ?: '—' }}@if (config('company.requisites.bik')), БИК {{ config('company.requisites.bik') }}@endif</td></tr>
-    <tr><th>Адрес</th><td>{{ config('company.address') }}</td></tr>
+    <tr><th style="width:150px">Наименование</th><td>{{ $requisites['legal_name'] }}</td></tr>
+    <tr><th>БИН</th><td>{{ $requisites['bin'] ?: '—' }}</td></tr>
+    <tr><th>ИИК</th><td>{{ $requisites['iik'] ?: '—' }}</td></tr>
+    <tr><th>Банк</th><td>{{ $requisites['bank'] ?: '—' }}@if ($requisites['bik']), БИК {{ $requisites['bik'] }}@endif</td></tr>
+    <tr><th>Адрес</th><td>{{ settings()->address() }}</td></tr>
 </table>
 
 <h2>Покупатель</h2>
 <table>
-    <tr><th style="width:150px">Наименование</th><td>{{ $order->customer->name }}</td></tr>
+    <tr><th style="width:150px">Наименование</th><td>{{ $order->customer->company_name ?: $order->customer->name }}</td></tr>
+    @if ($order->customer->company_name)
+        <tr><th>Контактное лицо</th><td>{{ $order->customer->name }}</td></tr>
+    @endif
+    @if ($order->customer->bin)
+        <tr><th>БИН/ИИН</th><td>{{ $order->customer->bin }}</td></tr>
+    @endif
     <tr><th>Телефон</th><td>{{ $order->customer->phone }}</td></tr>
 </table>
 
@@ -52,8 +59,8 @@
     </tr>
     <tr>
         <td></td>
-        <td class="right small" style="width:200px">{{ config('company.requisites.vat_payer') ? 'В том числе НДС:' : '' }}</td>
-        <td class="right small">{{ config('company.requisites.vat_payer') ? number_format((float) $order->total_amount * 12 / 112, 2, ',', ' ').' ₸' : 'Без НДС' }}</td>
+        <td class="right small" style="width:200px">{{ $requisites['vat_payer'] ? 'В том числе НДС:' : '' }}</td>
+        <td class="right small">{{ $requisites['vat_payer'] ? number_format((float) $order->total_amount * 12 / 112, 2, ',', ' ').' ₸' : 'Без НДС' }}</td>
     </tr>
 </table>
 
@@ -71,7 +78,7 @@
 <div class="sign">
     <div>
         <div class="small muted">Руководитель</div>
-        <div class="line small">{{ config('company.requisites.director') ?: 'подпись, ФИО' }}</div>
+        <div class="line small">{{ $requisites['director'] ?: 'подпись, ФИО' }}</div>
     </div>
     <div>
         <div class="small muted">Главный бухгалтер</div>

@@ -17,7 +17,7 @@ class TelegramClient
     /** Настроен ли канал вообще: без токена и чата слать некуда. */
     public function configured(): bool
     {
-        return (bool) config('notifications.telegram.enabled')
+        return settings()->enabled('telegram_alerts')
             && filled(config('notifications.telegram.token'))
             && filled(config('notifications.telegram.chat_id'));
     }

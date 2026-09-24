@@ -107,6 +107,7 @@ class SeedDemoOrders extends Command
 
         $fulfillment = collect([
             FulfillmentType::Installation,
+            FulfillmentType::Visit,
             FulfillmentType::Delivery,
             FulfillmentType::Pickup,
         ])->random();
@@ -116,7 +117,7 @@ class SeedDemoOrders extends Command
             'status' => OrderStatus::New,
             'source' => collect(OrderSource::cases())->random(),
             'fulfillment' => $fulfillment,
-            'address' => $fulfillment === FulfillmentType::Delivery ? $this->address() : null,
+            'address' => $fulfillment->needsAddress() ? $this->address() : null,
             'total_amount' => $price,
             'created_at' => $createdAt,
             'updated_at' => $createdAt,

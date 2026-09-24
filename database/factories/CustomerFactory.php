@@ -14,4 +14,25 @@ class CustomerFactory extends Factory
             'email' => $this->faker->optional()->safeEmail(),
         ];
     }
+
+    public function wholesale(int $discount = 10): static
+    {
+        return $this->state([
+            'wholesale_status' => \App\Enums\WholesaleStatus::Wholesale,
+            'company_name' => 'Сервис Тест',
+            'bin' => '123456789012',
+            'wholesale_discount_percent' => $discount,
+            'wholesale_approved_at' => now(),
+        ]);
+    }
+
+    public function pendingWholesale(): static
+    {
+        return $this->state([
+            'wholesale_status' => \App\Enums\WholesaleStatus::Pending,
+            'company_name' => 'Сервис Тест',
+            'bin' => '123456789012',
+            'wholesale_requested_at' => now(),
+        ]);
+    }
 }

@@ -69,15 +69,18 @@ class ServicePricingTest extends TestCase
     }
 
     /**
-     * Калибровка обязана быть в прайсе, но предлагать её всем нельзя:
-     * она нужна только там, где за стеклом камера.
+     * Работа без флага «по умолчанию» в заказ сама не попадает.
+     *
+     * Выезд мастера нужен не всем: большинство приезжает в сервис. Подставить
+     * его автоматически — значит показать цену выше настоящей и потерять
+     * покупателя ещё до звонка.
      */
-    public function test_калибровка_по_умолчанию_не_предлагается(): void
+    public function test_необязательная_работа_по_умолчанию_не_предлагается(): void
     {
-        $calibration = Service::where('slug', 'kalibrovka-adas')->sole();
+        $выезд = Service::where('slug', 'vyezd-mastera')->sole();
 
-        $this->assertFalse($calibration->is_default);
-        $this->assertNotSame($calibration->id, Service::defaultFor(GlassType::Windshield)->id);
+        $this->assertFalse($выезд->is_default);
+        $this->assertNotSame($выезд->id, Service::defaultFor(GlassType::Windshield)?->id);
     }
 
     /** Расходникам установка не положена — их просто отдают. */
@@ -101,6 +104,18 @@ class ServicePricingTest extends TestCase
             ->assertSee('45 000');   // стекло плюс работа
     }
 
+    public function test_в_корзине_итог_включает_установку(): void
+    {
+        $product = $this->glass(GlassType::Windshield, 30000);
+
+        $this->post(route('cart.add', $product));
+
+        $this->get(route('cart.show'))
+            ->assertOk()
+            ->assertSee('Установка')
+            ->assertSee('45 000');
+    }
+
     /** Про камеру молчать нельзя: калибровка иначе всплывёт счётом на месте. */
     public function test_про_калибровку_предупреждают_заранее(): void
     {
@@ -109,14 +124,14 @@ class ServicePricingTest extends TestCase
 
         $this->get(route('catalog.product', $product))
             ->assertOk()
-            ->assertSee('За стеклом камера');
+            ->assertSee('Нужна калибровка камеры');
     }
 
     public function test_без_камеры_про_калибровку_не_пишут(): void
     {
         $this->get(route('catalog.product', $this->glass(GlassType::Windshield)))
             ->assertOk()
-            ->assertDontSee('За стеклом камера');
+            ->assertDontSee('Нужна калибровка камеры');
     }
 
     // ------------------------------------------------------------------
@@ -145,6 +160,15 @@ class ServicePricingTest extends TestCase
         $order = $this->order($this->glass(GlassType::Windshield, 30000), FulfillmentType::Delivery);
 
         $this->assertSame(1, $order->items()->count());
+    }
+
+    public function test_выезд_добавляет_установку_и_поездку(): void
+    {
+        $order = $this->order($this->glass(GlassType::Windshield, 30000), FulfillmentType::Visit);
+
+        $this->assertSame(3, $order->items()->count());
+        $this->assertSame(50000.0, (float) $order->fresh()->total_amount);
+        $this->assertNotNull($order->items()->where('name', 'Выезд мастера по городу')->first());
     }
 
     /** Боковому — своя цена, а не цена лобового. */

@@ -92,13 +92,14 @@
 <div class="sheet">
     <div class="head">
         <div>
-            <div class="bold">{{ config('company.requisites.legal_name') }}</div>
+            @php($requisites = settings()->requisites())
+            <div class="bold">{{ $requisites['legal_name'] }}</div>
             <div class="small muted">
-                {{ config('company.address') }}<br>
-                @foreach (config('company.phones') as $phone){{ $phone['display'] }}@if (! $loop->last), @endif @endforeach<br>
-                {{ config('company.email') }}
-                @if (config('company.requisites.bin'))
-                    <br>БИН {{ config('company.requisites.bin') }}
+                {{ settings()->address() }}<br>
+                @foreach (settings()->phones() as $phone){{ $phone['display'] }}@if (! $loop->last), @endif @endforeach<br>
+                {{ settings()->email() }}
+                @if ($requisites['bin'])
+                    <br>БИН {{ $requisites['bin'] }}
                 @endif
             </div>
         </div>
@@ -113,12 +114,12 @@
 
     @yield('content')
 
-    @unless (config('company.requisites.bin'))
+    @unless (settings()->hasBin())
         {{-- Явное предупреждение: без реквизитов документ ничего не подтверждает --}}
         <div class="note warn">
             Реквизиты организации не заполнены (БИН, банк, ИИК). До их внесения
             документ можно использовать только как внутренний — юридической силы он не имеет.
-            Заполняются в <code>config/company.php</code> или через переменные окружения.
+            Заполняются в админке: Настройки → Реквизиты.
         </div>
     @endunless
 </div>

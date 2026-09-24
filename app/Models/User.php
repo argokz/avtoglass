@@ -4,20 +4,26 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use Database\Factories\UserFactory;
+use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
+use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthenticationRecovery;
+use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
+use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'role', 'phone', 'is_active'])]
+#[Fillable(['name', 'email', 'password', 'role', 'phone', 'is_active', 'customer_id'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, InteractsWithAppAuthentication, InteractsWithAppAuthenticationRecovery, Notifiable;
 
     /**
      * Умолчания дублируют схему намеренно: значение из DEFAULT появляется только
@@ -36,6 +42,8 @@ class User extends Authenticatable implements FilamentUser
             'password' => 'hashed',
             'role' => UserRole::class,
             'is_active' => 'boolean',
+            'app_authentication_secret' => 'encrypted',
+            'app_authentication_recovery_codes' => 'encrypted:array',
         ];
     }
 
@@ -62,5 +70,27 @@ class User extends Authenticatable implements FilamentUser
     public function isStaff(): bool
     {
         return $this->role !== UserRole::Customer;
+    }
+
+    /**
+     * Карточка покупателя в CRM. У сотрудников её нет, и это не ошибка:
+     * мастер — не клиент.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Заявки, которые кабинет вправе показать.
+     *
+     * Пока карточка не привязана, список пустой — а не «все заказы с этим
+     * телефоном». Зарегистрироваться может кто угодно и на чей угодно номер,
+     * поэтому чужую историю аккаунт получает только после того, как человек
+     * назвал номер одной из своих заявок.
+     */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'customer_id', 'customer_id');
     }
 }

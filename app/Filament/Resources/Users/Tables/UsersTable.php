@@ -36,6 +36,14 @@ class UsersTable
                     ->label('Работает')
                     ->boolean(),
 
+                IconColumn::make('has_app_authentication')
+                    ->label('2FA')
+                    ->boolean()
+                    ->getStateUsing(fn ($record) => filled($record->app_authentication_secret))
+                    ->tooltip(fn ($record) => filled($record->app_authentication_secret)
+                        ? 'Приложение-аутентификатор включено'
+                        : 'Ещё не включал в профиле'),
+
                 TextColumn::make('created_at')
                     ->label('Заведён')
                     ->date('d.m.Y')

@@ -102,10 +102,7 @@ class CrmTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        $this->post(route('order.store', $product), [
-            'name' => 'Данил',
-            'phone' => '+7 700 123-45-67',
-        ]);
+        $this->post(route('order.store', $product), $this->orderPayload());
 
         $order = Order::sole();
         $task = Task::sole();
@@ -120,10 +117,7 @@ class CrmTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        $this->post(route('order.store', $product), [
-            'name' => 'Данил',
-            'phone' => '+7 700 123-45-67',
-        ]);
+        $this->post(route('order.store', $product), $this->orderPayload());
 
         $this->assertSame('2026-09-01 10:15:00', Task::sole()->due_at->format('Y-m-d H:i:s'));
     }
@@ -133,10 +127,7 @@ class CrmTest extends TestCase
     {
         $product = Product::factory()->create();
 
-        $this->post(route('order.store', $product), [
-            'name' => 'Данил',
-            'phone' => '+7 700 123-45-67',
-        ]);
+        $this->post(route('order.store', $product), $this->orderPayload());
 
         $this->assertNull(Task::sole()->assigned_to);
     }

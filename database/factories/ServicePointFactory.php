@@ -11,6 +11,7 @@ class ServicePointFactory extends Factory
         return [
             'name' => 'Сервис на '.$this->faker->streetName(),
             'address' => $this->faker->address(),
+            'city' => config('company.legal_city', 'Караганда'),
             'bays' => 1,
             'opens_at' => '09:00',
             'closes_at' => '20:00',
