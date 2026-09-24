@@ -3,6 +3,12 @@
 .env
 .env.backup
 .env.production
+/.env.preview
+/.env.testing
+/bootstrap/cache/config.preview.php
+/bootstrap/cache/config.testing.php
+/test-results
+/playwright-report
 .phpactor.json
 .phpunit.result.cache
 /.codex
@@ -47,3 +53,11 @@ Thumbs.db
 # и текстам, но в историю проекта не тащим — это 11 МБ чужой статики,
 # которую из git потом уже не убрать.
 /old-lp
+
+# Локальный nginx разработчика: в нём конфигурация других проектов на этой
+# машине. Боевой конфиг сайта лежит в deploy/nginx/.
+/nginx.conf
+/nginx.conf.backup
+
+# Генерируется командой sitemap:generate по расписанию.
+/public/sitemap.xml
