@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
     testDir: './tests/Browser',
+    globalSetup: './tests/Browser/helpers/preview-setup.js',
     fullyParallel: false,
     workers: 1,
     timeout: 60_000,

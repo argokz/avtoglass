@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Корзина')
+@section('body_class', 'has-mobile-cta')
 
 @section('breadcrumbs')
     <span class="text-line-strong">/</span><span class="text-ink">Корзина</span>
@@ -8,7 +9,7 @@
 
 @section('content')
 
-<h1 class="text-2xl font-extrabold sm:text-3xl">Корзина</h1>
+<div class="page-heading"><p class="eyebrow">ВАШ ПОДБОР</p><h1>Корзина</h1><p class="mt-2 text-muted">Проверьте состав и выберите удобный способ получения.</p></div>
 
 @if ($items->isEmpty())
     <div class="card mt-8 px-6 py-14 text-center">
@@ -57,159 +58,149 @@
         </div>
     @endif
 
-    {{-- Состав + краткий итог (как в магазинах: сначала что берёте, потом оформление) --}}
-    <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
-        <div class="space-y-3">
-            @foreach ($items as $item)
-                <div class="card flex gap-4 p-4">
-                    <a href="{{ route('catalog.product', $item->product) }}"
-                       class="grid h-24 w-28 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sunken p-3 text-line-strong">
-                        @if ($item->product->imageUrl())
-                            <img src="{{ $item->product->imageUrl() }}" alt="" class="h-full w-full object-contain" loading="lazy">
-                        @else
-                            <x-glass-icon :type="$item->product->glass_type" class="h-full w-full" />
-                        @endif
-                    </a>
-
-                    <div class="min-w-0 flex-1">
+    {{-- Единая двухколоночная сетка: слева состав и форма оформления, справа один липкий блок расчёта --}}
+    <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
+        <div class="min-w-0 space-y-8">
+            <div class="space-y-3">
+                @foreach ($items as $item)
+                    <div class="cart-line card flex gap-4 p-4">
                         <a href="{{ route('catalog.product', $item->product) }}"
-                           class="text-sm leading-snug font-bold transition hover:text-brand-ink">
-                            {{ $item->product->name }}
+                           class="cart-line-image grid h-24 w-28 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sunken p-3 text-line-strong">
+                            @if ($item->product->image_path)
+                                <x-picture :path="$item->product->image_path" alt="" sizes="112px"
+                                           class="h-full w-full object-contain" />
+                            @else
+                                <x-glass-icon :type="$item->product->glass_type" class="h-full w-full" />
+                            @endif
                         </a>
 
-                        <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-faint">
-                            @if ($item->offer?->supplier)
-                                <span class="font-semibold text-ink">{{ $item->offer->supplier->name }}</span>
-                            @endif
-                            @if (settings()->enabled('display_stock'))
-                                @if ($item->product->in_stock)
-                                    <span class="badge badge-ok">В наличии</span>
+                        <div class="min-w-0 flex-1">
+                            <a href="{{ route('catalog.product', $item->product) }}"
+                               class="text-sm leading-snug font-bold transition hover:text-brand-ink">
+                                {{ $item->product->name }}
+                            </a>
+
+                            <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-faint">
+                                @if ($item->offer?->supplier)
+                                    <span class="font-semibold text-ink">{{ $item->offer->supplier->name }}</span>
+                                @endif
+                                @if (settings()->enabled('display_stock'))
+                                    @if ($item->product->in_stock)
+                                        <span class="badge badge-ok">В наличии</span>
+                                    @else
+                                        <span class="badge badge-muted">Под заказ</span>
+                                    @endif
                                 @else
                                     <span class="badge badge-muted">Под заказ</span>
                                 @endif
-                            @else
-                                <span class="badge badge-muted">Под заказ</span>
-                            @endif
-                            @if ($item->hasPrice())
-                                <span>{{ number_format($item->price(), 0, ',', ' ') }} ₸ за шт</span>
-                            @endif
-                            @if (текущийПокупатель()?->seesWholesalePrices())
-                                <span class="badge badge-brand">Опт</span>
-                            @endif
-                        </div>
-
-                        <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-                            <form method="post" action="{{ route('cart.update', $item->product) }}"
-                                  class="qty-stepper" data-qty-stepper data-auto-submit>
-                                @csrf
-                                @method('patch')
-                                @if ($item->offer)
-                                    <input type="hidden" name="offer_id" value="{{ $item->offer->id }}">
-                                @endif
-                                <button type="button" data-qty="-1" aria-label="Меньше">−</button>
-                                <input id="qty-{{ $item->product->id }}-{{ $item->offer?->id ?? 0 }}" type="number" name="quantity"
-                                       value="{{ $item->quantity }}" min="1" max="{{ App\Cart\Cart::maxQuantity() }}"
-                                       aria-label="Количество"
-                                       onchange="this.form.submit()">
-                                <button type="button" data-qty="1" aria-label="Больше">+</button>
-                                <noscript>
-                                    <button type="submit" class="btn btn-sm btn-outline !rounded-none">ОК</button>
-                                </noscript>
-                            </form>
-
-                            <div class="flex items-center gap-3">
                                 @if ($item->hasPrice())
-                                    <span class="price text-lg">
-                                        {{ number_format($item->subtotal(), 0, ',', ' ') }} ₸
-                                    </span>
-                                @else
-                                    <span class="text-sm text-faint">Цена по запросу</span>
+                                    <span>{{ formatPrice($item->price()) }} ₸ за шт</span>
                                 @endif
+                                @if (текущийПокупатель()?->seesWholesalePrices())
+                                    <span class="badge badge-brand">Опт</span>
+                                @endif
+                            </div>
 
-                                <form method="post" action="{{ route('cart.remove', $item->product) }}" data-no-loading>
+                            <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                <form method="post" action="{{ route('cart.update', $item->product) }}"
+                                      class="qty-stepper" data-qty-stepper data-auto-submit>
                                     @csrf
-                                    @method('delete')
+                                    @method('patch')
                                     @if ($item->offer)
                                         <input type="hidden" name="offer_id" value="{{ $item->offer->id }}">
                                     @endif
-                                    <button type="submit" class="text-sm font-semibold text-faint transition hover:text-brand-ink"
-                                            aria-label="Убрать из корзины">
-                                        Убрать
-                                    </button>
+                                    <button type="button" data-qty="-1" aria-label="Меньше">−</button>
+                                    <input id="qty-{{ $item->product->id }}-{{ $item->offer?->id ?? 0 }}" type="number" name="quantity"
+                                           value="{{ $item->quantity }}" min="1" max="{{ App\Cart\Cart::maxQuantity() }}"
+                                           aria-label="Количество"
+                                           onchange="this.form.submit()">
+                                    <button type="button" data-qty="1" aria-label="Больше">+</button>
+                                    <noscript>
+                                        <button type="submit" class="btn btn-sm btn-outline !rounded-none">ОК</button>
+                                    </noscript>
                                 </form>
+
+                                <div class="flex items-center gap-3">
+                                    @if ($item->hasPrice())
+                                        <span class="price text-lg">
+                                            {{ formatPrice($item->subtotal()) }} ₸
+                                        </span>
+                                    @else
+                                        <span class="text-sm text-faint">Цена по запросу</span>
+                                    @endif
+
+                                    <form method="post" action="{{ route('cart.remove', $item->product) }}" data-no-loading>
+                                        @csrf
+                                        @method('delete')
+                                        @if ($item->offer)
+                                            <input type="hidden" name="offer_id" value="{{ $item->offer->id }}">
+                                        @endif
+                                        <button type="submit" class="text-sm font-semibold text-faint transition hover:text-brand-ink"
+                                                aria-label="Убрать из корзины">
+                                            Убрать
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     </div>
+                @endforeach
+            </div>
+
+            <section id="oformlenie" class="checkout-section scroll-mt-28">
+                <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <h2 class="flex items-center gap-2 text-xl font-extrabold sm:text-2xl">
+                            <span class="step-num">2</span>
+                            Оформление заказа
+                        </h2>
+                        <p class="mt-1 text-sm text-muted">Менеджер подтвердит наличие по каждой позиции</p>
+                    </div>
                 </div>
-            @endforeach
+
+                <div class="card p-5 sm:p-6">
+                    <x-order-form
+                        form-id="cart-checkout"
+                        layout="wide"
+                        :show-submit="false"
+                        :with-car="true"
+                        :car-info="$carLabel"
+                        :action="route('cart.checkout')"
+                        submit="Оформить заказ"
+                    />
+                </div>
+            </section>
         </div>
 
-        <aside class="lg:sticky lg:top-28 lg:self-start">
-            <x-cart-summary :quotes="$quotes" :fulfillment="old('fulfillment', $defaultFulfillment)" />
+        <aside class="lg:sticky lg:top-28 lg:self-start space-y-3">
+            <x-cart-summary
+                :quotes="$quotes"
+                :fulfillment="old('fulfillment', $defaultFulfillment)"
+                :submit="true"
+                form="cart-checkout"
+            />
+            <a href="#oformlenie" class="btn btn-outline btn-sm w-full lg:hidden">
+                Перейти к оформлению
+            </a>
         </aside>
     </div>
 
-    {{-- Полноширинное оформление: две колонки, кнопка отправки в сайдбаре через form= --}}
-    <section id="oformlenie" class="mt-10 scroll-mt-28 sm:mt-12">
-        <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
-            <div>
-                <h2 class="flex items-center gap-2 text-xl font-extrabold sm:text-2xl">
-                    <span class="step-num">2</span>
-                    Оформление заказа
-                </h2>
-                <p class="mt-1 text-sm text-muted">Менеджер подтвердит наличие по каждой позиции</p>
+    {{-- Нижняя панель на телефоне: итог и кнопка всегда под рукой, сайдбар далеко внизу --}}
+    @php
+        $mobileQuote = $quotes[$defaultFulfillment] ?? $quotes['installation'] ?? ['total' => 0];
+    @endphp
+    <div class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden"
+         data-cart-summary>
+        <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+                <div class="text-xs text-faint">Итого</div>
+                <div class="price price-brand text-xl" data-quote-total>{{ formatPrice($mobileQuote['total']) }} ₸</div>
             </div>
+            <button type="submit" form="cart-checkout" class="btn btn-primary shrink-0">
+                Оформить заказ
+            </button>
         </div>
-
-        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
-            <div class="card p-5 sm:p-6">
-                <x-order-form
-                    form-id="cart-checkout"
-                    layout="wide"
-                    :show-submit="false"
-                    :with-car="true"
-                    :car-info="$carLabel"
-                    :action="route('cart.checkout')"
-                    submit="Оформить заказ"
-                />
-            </div>
-
-            <aside class="lg:sticky lg:top-28 lg:self-start space-y-3">
-                <div class="card p-5">
-                    <h3 class="text-sm font-extrabold">Состав</h3>
-                    <ul class="mt-3 space-y-2 text-sm">
-                        @foreach ($items as $item)
-                            <li class="flex justify-between gap-3">
-                                <span class="min-w-0 truncate text-muted">
-                                    {{ $item->product->name }}
-                                    @if ($item->offer?->supplier)
-                                        · {{ $item->offer->supplier->name }}
-                                    @endif
-                                    @if ($item->quantity > 1)
-                                        × {{ $item->quantity }}
-                                    @endif
-                                </span>
-                                <span class="shrink-0 font-semibold">
-                                    @if ($item->hasPrice())
-                                        {{ number_format($item->subtotal(), 0, ',', ' ') }} ₸
-                                    @else
-                                        —
-                                    @endif
-                                </span>
-                            </li>
-                        @endforeach
-                    </ul>
-                </div>
-
-                <x-cart-summary
-                    :quotes="$quotes"
-                    :fulfillment="old('fulfillment', $defaultFulfillment)"
-                    :submit="true"
-                    form="cart-checkout"
-                />
-            </aside>
-        </div>
-    </section>
+    </div>
     </div>
     @endif
 

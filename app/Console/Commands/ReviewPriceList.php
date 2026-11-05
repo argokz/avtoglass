@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use App\Models\PriceImportRow;
 use App\Models\PriceImportRun;
 use Illuminate\Console\Command;
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Cell\StringCell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
 
@@ -100,6 +102,21 @@ class ReviewPriceList extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Строка выгрузки, где текст остаётся текстом.
+     *
+     * Row::fromValues превращает строку, начинающуюся с «=», в формулу Excel,
+     * а наименование пришло из чужого файла. Формула из прайса не должна
+     * выполняться на компьютере менеджера, который откроет выгрузку.
+     */
+    public static function textRow(array $values): Row
+    {
+        return new Row(array_map(
+            fn ($value) => is_string($value) ? new StringCell($value, null) : Cell::fromValue($value),
+            $values,
+        ));
+    }
+
     private function export($query, string $path, int $total): void
     {
         if (! str_ends_with(mb_strtolower($path), '.xlsx')) {
@@ -122,7 +139,7 @@ class ReviewPriceList extends Command
             foreach ($chunk as $r) {
                 $options = collect((array) $r->options)->filter()->keys()->implode(', ');
 
-                $writer->addRow(Row::fromValues([
+                $writer->addRow(self::textRow([
                     $r->id,
                     $r->raw_name,
                     $r->confidence,

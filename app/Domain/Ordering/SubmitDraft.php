@@ -8,6 +8,10 @@ use App\Domain\Identity\BuyerContext;
 use App\Domain\Pricing\Models\CheckoutQuote;
 use App\Domain\Pricing\Money;
 use App\Domain\Pricing\QuoteDraft;
+use App\Domain\Risk\AssessOrderRisk;
+use App\Domain\Risk\FraudContext;
+use App\Domain\Risk\FraudProvider;
+use App\Domain\Risk\RiskLevel;
 use App\Domain\Shared\Outbox\Outbox;
 use App\Domain\Shared\PurchaseException;
 use App\Enums\AssignmentStatus;
@@ -26,6 +30,7 @@ use App\Models\ServicePoint;
 use App\Models\StockReservation;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -45,7 +50,7 @@ final class SubmitDraft
     /**
      * @return array<string,mixed>
      */
-    public function handle(BuyerContext $buyer, string $draftId, string $quoteId, int $expectedVersion, string $action): array
+    public function handle(BuyerContext $buyer, string $draftId, string $quoteId, int $expectedVersion, string $action, ?Order $reviewOrder = null): array
     {
         if (DB::transactionLevel() === 0) {
             throw new LogicException('SubmitDraft requires the idempotent submission transaction.');
@@ -67,8 +72,27 @@ final class SubmitDraft
         $snapshot = $quote->jsonSerialize();
         $draft = DraftAccess::query($buyer, $draftId)->lockForUpdate()->firstOrFail();
 
+        if ($reviewOrder !== null && $action === 'accept_proposal') {
+            if ($reviewOrder->customer_id !== $buyer->customerId) {
+                throw new PurchaseException('RESOURCE_NOT_FOUND', 404);
+            }
+
+            return $this->confirmRetail($buyer, $draft, $quoteId, OrderProposalService::readySnapshot($snapshot), $draft->sales_mode === SalesMode::Wholesale, $reviewOrder);
+        }
+
         if ($action === 'confirm_retail') {
             return $this->confirmRetail($buyer, $draft, $quoteId, $snapshot);
+        }
+        if ($action === 'confirm_wholesale') {
+            $buyer->assertMode(SalesMode::Wholesale);
+            if ($draft->sales_mode !== SalesMode::Wholesale) {
+                throw new PurchaseException('WHOLESALE_REQUIRED', 403);
+            }
+
+            return $this->confirmRetail($buyer, $draft, $quoteId, $snapshot, true);
+        }
+        if ($action !== 'submit_for_review') {
+            throw new PurchaseException('INVALID_ACTION', 422);
         }
 
         return $this->submitForReview($buyer, $draft, $quoteId, $snapshot);
@@ -78,9 +102,9 @@ final class SubmitDraft
      * @param  array<string,mixed>  $snapshot
      * @return array<string,mixed>
      */
-    private function confirmRetail(BuyerContext $buyer, $draft, string $quoteId, array $snapshot): array
+    private function confirmRetail(BuyerContext $buyer, $draft, string $quoteId, array $snapshot, bool $wholesale = false, ?Order $reviewOrder = null): array
     {
-        if ($draft->sales_mode === SalesMode::Wholesale) {
+        if ($draft->sales_mode === SalesMode::Wholesale && ! $wholesale) {
             throw new PurchaseException('REVIEW_REQUIRED', 409, [
                 'readiness' => $snapshot['readiness'],
                 'reasons' => array_values(array_unique([...($snapshot['reasons'] ?? []), 'WHOLESALE_REVIEW_REQUIRED'])),
@@ -92,11 +116,21 @@ final class SubmitDraft
                 'reasons' => $snapshot['reasons'] ?? [],
             ]);
         }
-        if (! config('ordering.auto_checkout_enabled')) {
+        if ($reviewOrder === null && ! config($wholesale ? 'ordering.wholesale_auto_checkout_enabled' : 'ordering.auto_checkout_enabled')) {
             throw new PurchaseException('AUTO_CHECKOUT_DISABLED', 409, [
                 'quote_id' => $quoteId,
                 'draft_id' => $draft->id,
             ]);
+        }
+
+        $risk = app(FraudProvider::class)->assess(new FraudContext(
+            Customer::phoneHash($snapshot['contacts']['phone'] ?? null),
+            request()->ip() ? hash_hmac('sha256', request()->ip(), (string) config('app.key')) : null,
+            isset($snapshot['total']['amount_minor']) ? (float) Money::fromMinor($snapshot['total']['amount_minor'])->decimal() : null,
+            $draft->sales_mode->value,
+        ));
+        if ($risk->level !== RiskLevel::Allow) {
+            throw new PurchaseException('RISK_REVIEW_REQUIRED', 409);
         }
 
         $lines = collect($snapshot['items'] ?? [])->filter(fn ($line) => ($line['offer_id'] ?? null) !== null)->values();
@@ -114,7 +148,7 @@ final class SubmitDraft
 
         foreach ($lines as $line) {
             $offer = $offers->get((int) $line['offer_id']);
-            if (! $offer || ! $offer->is_active || ! $offer->auto_checkout_enabled) {
+            if (! $offer || ! $offer->is_active || (! $offer->auto_checkout_enabled && $reviewOrder === null)) {
                 throw new PurchaseException('REVIEW_REQUIRED', 409, [
                     'readiness' => 'review_required',
                     'reasons' => ['AUTO_CHECKOUT_DISABLED'],
@@ -141,7 +175,7 @@ final class SubmitDraft
             $this->assertAndLockSlot($point, $slotStart, $duration);
         }
 
-        $order = $this->createOrder($buyer, $draft, $snapshot, OrderStatus::Confirmed, OrderSource::Cart);
+        $order = $this->createOrder($buyer, $draft, $snapshot, OrderStatus::Confirmed, $wholesale ? OrderSource::Wholesale : OrderSource::Cart, $reviewOrder);
         $this->addQuotedItems($order, $snapshot);
         $this->reserveAll($order, $lines);
         $assignmentId = null;
@@ -162,7 +196,7 @@ final class SubmitDraft
             ])->save();
             Interaction::system($order, 'Автоподтверждение с записью на пост: '.$slotStart->setTimezone($point->timezone)->format('d.m.Y H:i'));
         } else {
-            Interaction::system($order, 'Автоподтверждение розницы: полный резерв без оплаты на этом шаге');
+            Interaction::system($order, 'Автоподтверждение: полный резерв без оплаты на этом шаге');
         }
 
         $this->finalizeDraft($draft, $quoteId);
@@ -198,9 +232,14 @@ final class SubmitDraft
         $order = $this->createOrder($buyer, $draft, $snapshot, OrderStatus::New, $source);
         $this->addQuotedItems($order, $snapshot);
         Interaction::system($order, 'Заявка из черновика на согласование');
-        $this->scheduleCallback($order, $draft->sales_mode === SalesMode::Wholesale);
+        $risk = app(AssessOrderRisk::class)->apply($order, request()->ip());
+        if ($risk !== RiskLevel::Block) {
+            $this->scheduleCallback($order, $draft->sales_mode === SalesMode::Wholesale);
+        }
         $this->finalizeDraft($draft, $quoteId);
-        $this->enqueueAnnounce($order);
+        if ($risk !== RiskLevel::Block) {
+            $this->enqueueAnnounce($order);
+        }
 
         return [
             'id' => $order->public_token,
@@ -218,7 +257,7 @@ final class SubmitDraft
     /**
      * @param  array<string,mixed>  $snapshot
      */
-    private function createOrder(BuyerContext $buyer, $draft, array $snapshot, OrderStatus $status, OrderSource $source): Order
+    private function createOrder(BuyerContext $buyer, $draft, array $snapshot, OrderStatus $status, OrderSource $source, ?Order $reviewOrder = null): Order
     {
         $name = trim((string) ($snapshot['contacts']['name'] ?? ''));
         $phone = (string) ($snapshot['contacts']['phone'] ?? '');
@@ -231,7 +270,12 @@ final class SubmitDraft
         $fulfillment = $snapshot['fulfillment'] ?? [];
         $type = FulfillmentType::tryFrom((string) ($fulfillment['type'] ?? ''))?->value;
 
-        $order = Order::create([
+        $attributes = [
+            'purchase_draft_id' => $draft->id,
+            'purchase_snapshot' => $snapshot,
+            'purchase_state' => $status === OrderStatus::New ? 'review_required' : 'confirmed',
+            'payment_method' => $snapshot['payment_method'] ?? 'cash',
+            'currency' => 'KZT',
             'customer_id' => $customer->id,
             'status' => $status,
             'source' => $source,
@@ -244,8 +288,20 @@ final class SubmitDraft
                 : (isset($snapshot['known_total']['amount_minor'])
                     ? Money::fromMinor((int) $snapshot['known_total']['amount_minor'])->decimal()
                     : null),
-        ]);
-        $customer->increment('orders_count');
+        ];
+        if ($reviewOrder !== null) {
+            if (! in_array($reviewOrder->status, [OrderStatus::New, OrderStatus::InProgress], true) || $reviewOrder->payments()->where('status', 'succeeded')->exists()) {
+                throw new PurchaseException('ORDER_CHANGED', 409);
+            }
+            unset($attributes['source']);
+            $reviewOrder->items()->delete();
+            $reviewOrder->forceFill($attributes)->save();
+            $order = $reviewOrder;
+        } else {
+            $attributes['purchase_guest_owner_hash'] = $buyer->guestOwnerHash;
+            $order = Order::create($attributes);
+            $customer->increment('orders_count');
+        }
 
         return $order;
     }
@@ -289,7 +345,7 @@ final class SubmitDraft
         }
     }
 
-    /** @param  \Illuminate\Support\Collection<int,array<string,mixed>>  $lines */
+    /** @param  Collection<int,array<string,mixed>>  $lines */
     private function reserveAll(Order $order, $lines): void
     {
         $items = $order->items()->whereNotNull('offer_id')->get()->keyBy('offer_id');
@@ -306,7 +362,8 @@ final class SubmitDraft
                 'order_item_id' => $item->id,
                 'quantity' => (int) $line['quantity'],
                 'status' => ReservationStatus::Held,
-                'expires_at' => now()->addDays(max(1, $days)),
+                'expires_at' => in_array($order->payment_method?->value, ['card', 'kaspi'], true)
+                    ? now()->addMinutes((int) config('ordering.online_reservation_minutes', 15)) : now()->addDays(max(1, $days)),
             ]);
         }
     }
@@ -382,6 +439,14 @@ final class SubmitDraft
             isset($vehicle['year']) ? 'год '.$vehicle['year'] : null,
             'Черновик оформлен через ordering API',
         ]);
+        foreach ($snapshot['items'] ?? [] as $line) {
+            if (($line['offer_id'] ?? null) === null && filled($line['reference'] ?? null)) {
+                $parts[] = 'Подбор: '.$line['reference'].'; количество '.($line['quantity'] ?? 1);
+            }
+            if (filled($line['comment'] ?? null)) {
+                $parts[] = 'Комментарий: '.$line['comment'];
+            }
+        }
 
         return $parts !== [] ? implode('; ', $parts) : null;
     }

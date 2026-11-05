@@ -38,7 +38,7 @@
     };
 @endphp
 
-<div class="inline-flex items-center gap-2.5">
+<div class="inline-flex max-w-full flex-wrap items-center gap-2.5">
     {{-- Векторный логотип бренда автостекла --}}
     <div class="flex items-center justify-center shrink-0">
         @switch($key)

@@ -11,8 +11,8 @@ use App\Enums\GlassType;
 use App\Models\CarModel;
 use App\Models\CarModelAlias;
 use App\Models\Offer;
+use App\Models\Product;
 use App\Models\StockReservation;
-use App\Services\PriceList\BrandDictionary;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +32,7 @@ final class SearchOffers
 
     private const ALLOWED = [
         'q', 'page', 'per_page', 'glass_type', 'supplier_id', 'in_stock_only',
-        'car_model_id', 'brand_id', 'year', 'generation_id', 'body', 'doors', 'options',
+        'car_model_id', 'brand_id', 'year', 'generation_id', 'body', 'doors', 'options', 'offer_ids',
     ];
 
     public function __construct(
@@ -71,6 +71,13 @@ final class SearchOffers
                 }
             })
             ->when($supplierId !== null, fn (Builder $builder) => $builder->where('offers.supplier_id', $supplierId));
+        if (array_key_exists('offer_ids', $params)) {
+            $ids = $params['offer_ids'];
+            if (! is_array($ids) || ! array_is_list($ids) || count($ids) < 1 || count($ids) > 3 || array_filter($ids, fn ($id) => ! is_int($id) || $id < 1)) {
+                throw ValidationException::withMessages(['offer_ids' => 'Нужно от одного до трёх целых ID предложений.']);
+            }
+            $base->whereIn('offers.id', $ids);
+        }
 
         $matchType = 'browse';
         $filtered = clone $base;
@@ -81,7 +88,7 @@ final class SearchOffers
             if ($exactIds !== []) {
                 $filtered->whereIn('offers.id', $exactIds);
                 $matchType = 'exact_code';
-            } elseif (mb_strlen($q) <= 2) {
+            } elseif (mb_strlen($q) <= 2 && ! preg_match('/\d/u', $q)) {
                 $filtered->whereRaw('0 = 1');
                 $matchType = 'too_short';
             } else {
@@ -93,16 +100,24 @@ final class SearchOffers
             $matchType = 'vehicle';
         }
 
+        $heldSub = StockReservation::query()->held()
+            ->selectRaw('offer_id, sum(quantity) as quantity')->groupBy('offer_id');
+        $filtered->leftJoinSub($heldSub, 'held_stock', 'held_stock.offer_id', '=', 'offers.id')
+            // Страна нужна в сортировке: приоритет отечественного товара — правило площадки.
+            ->leftJoin('products as origin_p', 'origin_p.id', '=', 'offers.product_id')
+            ->select('offers.*');
         if ($inStockOnly) {
-            $heldSub = StockReservation::query()->held()
-                ->selectRaw('offer_id, sum(quantity) as quantity')
-                ->groupBy('offer_id');
-            $filtered->leftJoinSub($heldSub, 'held_stock', 'held_stock.offer_id', '=', 'offers.id')
-                ->whereRaw('(offers.stock_qty - coalesce(held_stock.quantity, 0)) > 0')
-                ->select('offers.*');
+            $filtered->whereRaw('(offers.stock_qty - coalesce(held_stock.quantity, 0)) > 0');
         }
 
         $total = (clone $filtered)->count('offers.id');
+        $matchedProducts = $this->fitment->matchingProducts($vehicle, $model);
+        // A match on a later page must rank ahead of an earlier uncertain offer.
+        $filtered->orderByRaw('case when offers.product_id in ('.$matchedProducts->toSql().') then 0 else 1 end', $matchedProducts->getBindings())
+            ->orderByRaw('case when (offers.stock_qty - coalesce(held_stock.quantity, 0)) > 0 then 0 else 1 end')
+            ->orderByRaw("case when origin_p.origin_country = 'KZ' then 0 else 1 end")
+            ->orderByRaw("case when offers.currency = 'KZT' and offers.price_retail > 0"
+                .($buyer->wholesaleApproved ? ' and offers.price_wholesale >= 0' : '').' then 0 else 1 end');
         $offers = $filtered
             ->with([
                 'product.fitments' => fn ($builder) => $builder->orderBy('id'),
@@ -138,17 +153,26 @@ final class SearchOffers
             $items[] = [
                 'offer_id' => $offer->id,
                 'product_id' => $offer->product_id,
+                'product_slug' => $offer->product?->slug,
                 'name' => $offer->product?->name,
                 'article' => $offer->article,
                 'eurocode' => $offer->product?->eurocode,
                 'oem_code' => $offer->product?->oem_code,
                 'glass_type' => $offer->product?->glass_type?->value,
+                'options' => array_map(fn ($flag) => (bool) $offer->product->{$flag}, array_combine(array_keys(Product::OPTION_FLAGS), array_keys(Product::OPTION_FLAGS))),
+                'vehicle_ranges' => $offer->product->fitments->map(fn ($fit) => [
+                    'car_model_id' => (int) $fit->car_model_id,
+                    'year_from' => $fit->year_from === null ? null : (int) $fit->year_from,
+                    'year_to' => $fit->year_to === null ? null : (int) $fit->year_to,
+                ])->all(),
+                'made_in_kz' => $offer->product?->origin_country === 'KZ',
                 'manufacturer' => [
                     'id' => $offer->supplier?->id,
                     'name' => $offer->supplier?->name,
                 ],
                 'unit_price' => $price?->jsonSerialize(),
                 'available_qty' => $available,
+                'availability' => Availability::forOffer($offer, $available)->toArray(),
                 'match' => [
                     'type' => $matchType,
                     'field' => match ($matchType) {
@@ -168,20 +192,9 @@ final class SearchOffers
             ];
         }
 
-        usort($items, function (array $left, array $right) {
-            $rank = fn (array $row) => [
-                $row['match']['type'] === 'exact_code' ? 0 : 1,
-                $row['fitment']['status'] === 'matched' ? 0 : 1,
-                $row['available_qty'] > 0 ? 0 : 1,
-                $row['unit_price'] === null ? 1 : 0,
-                $row['offer_id'],
-            ];
-
-            return $rank($left) <=> $rank($right);
-        });
-
         return [
             'items' => array_values($items),
+            'vehicle' => array_filter(['car_model_id' => $model?->id, 'brand_id' => $model?->car_brand_id, ...$vehicle], fn ($value) => $value !== null),
             'meta' => [
                 'page' => $page,
                 'per_page' => $perPage,
@@ -266,7 +279,7 @@ final class SearchOffers
     }
 
     /** @param  array<string,mixed>  $params */
-    private function resolveModel(array $params, ?string $query): ?CarModel
+    public function resolveModel(array $params, ?string $query): ?CarModel
     {
         $modelId = $this->optionalIntParam($params, 'car_model_id', 1);
         if ($modelId !== null) {
@@ -287,21 +300,12 @@ final class SearchOffers
                 ->first();
         }
 
-        $brand = BrandDictionary::canonical($query);
-        if ($brand !== null) {
-            $byBrand = CarModel::query()
-                ->whereHas('brand', fn (Builder $builder) => $builder->whereRaw('lower(name) = ?', [mb_strtolower($brand)]))
-                ->orderBy('name')
-                ->first();
-            if ($byBrand !== null) {
-                return $byBrand;
-            }
-        }
-
-        return CarModel::query()
+        $models = CarModel::query()
             ->where('name', 'ilike', '%'.$query.'%')
             ->orderBy('name')
-            ->first();
+            ->limit(2)->get();
+
+        return $models->count() === 1 ? $models->first() : null;
     }
 
     /**
@@ -465,7 +469,13 @@ final class SearchOffers
             if (! is_array($params['options'])) {
                 throw ValidationException::withMessages(['options' => ['invalid']]);
             }
-            $vehicle['options'] = $params['options'];
+            $vehicle['options'] = [];
+            foreach ($params['options'] as $flag => $value) {
+                if (! array_key_exists($flag, Product::OPTION_FLAGS) || $value === '') {
+                    throw ValidationException::withMessages(['options.'.$flag => ['invalid']]);
+                }
+                $vehicle['options'][$flag] = $value === null ? null : $this->boolParam($params['options'], $flag, false);
+            }
         }
 
         return $vehicle;

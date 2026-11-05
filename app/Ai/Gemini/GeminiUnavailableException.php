@@ -2,7 +2,7 @@
 
 namespace App\Ai\Gemini;
 
-use RuntimeException;
+use App\Ai\AiProviderException;
 
 /** Лимиты исчерпаны на всех ключах и моделях — повтор имеет смысл после паузы. */
-class GeminiUnavailableException extends RuntimeException {}
+class GeminiUnavailableException extends AiProviderException {}

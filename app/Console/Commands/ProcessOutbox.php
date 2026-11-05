@@ -18,8 +18,13 @@ final class ProcessOutbox extends Command
     public function handle(): int
     {
         $limit = max(1, min(1000, (int) $this->option('limit')));
+        // available_at is a ten-minute lease while a worker owns the event.
+        OutboxEvent::query()->where('status', 'processing')
+            ->where('available_at', '<=', CarbonImmutable::now('UTC')->format('Y-m-d H:i:sP'))
+            ->update(['status' => 'pending']);
         $ids = OutboxEvent::query()
             ->whereIn('status', ['pending', 'failed'])
+            ->where('attempts', '<', 10)
             ->where('available_at', '<=', CarbonImmutable::now('UTC')->format('Y-m-d H:i:sP'))
             ->orderBy('available_at')
             ->orderBy('id')

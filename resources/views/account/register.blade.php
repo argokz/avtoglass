@@ -11,6 +11,7 @@
 @section('content')
 
 <div class="mx-auto max-w-lg py-6">
+    <p class="eyebrow mb-3">ЛИЧНЫЙ КАБИНЕТ</p>
     <h1 class="text-2xl font-extrabold sm:text-3xl">Кабинет покупателя</h1>
 
     <p class="mt-2 text-sm text-muted">

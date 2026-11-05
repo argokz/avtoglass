@@ -8,12 +8,20 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Once;
 
 class Offer extends Model
 {
     use HasFactory;
 
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        $flush = static fn () => Once::flush();
+        static::saved($flush);
+        static::deleted($flush);
+    }
 
     protected function casts(): array
     {

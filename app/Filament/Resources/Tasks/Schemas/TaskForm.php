@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Tasks\Schemas;
 
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
+use App\Models\Customer;
 use App\Models\User;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -51,7 +52,10 @@ class TaskForm
                     Select::make('customer_id')
                         ->label('Клиент')
                         ->relationship('customer', 'name')
-                        ->searchable(['name', 'phone'])
+                        // Телефон зашифрован: поиск по нему идёт через слепой индекс.
+                        ->getSearchResultsUsing(fn (string $search): array => Customer::searchForSelect($search))
+                        ->getOptionLabelUsing(fn ($value): ?string => Customer::find($value)?->name)
+                        ->searchable()
                         ->preload(),
 
                     Select::make('order_id')

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\CreateOrder;
 use App\Actions\StartPayment;
 use App\Cart\Cart;
+use App\Domain\Ordering\StorefrontCheckout;
 use App\Enums\FulfillmentType;
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Product;
@@ -35,7 +36,10 @@ class CartController extends Controller
         }
 
         $items = $this->cart->items();
-        $items->each(fn ($item) => $item->product->loadMissing('fitments.carModel.brand'));
+        if ($items->isNotEmpty()) {
+            (new \Illuminate\Database\Eloquent\Collection($items->pluck('product')->all()))
+                ->loadMissing('fitments.carModel.brand');
+        }
 
         return view('cart.show', [
             'items' => $items,
@@ -119,7 +123,11 @@ class CartController extends Controller
             return redirect()->route('cart.show');
         }
 
-        $order = $createOrder->fromCart($request->validated(), $this->cart);
+        if (StorefrontCheckout::enabled()) {
+            $order = app(StorefrontCheckout::class)->fromCart($request->validated(), $this->cart);
+        } else {
+            $order = $createOrder->fromCart($request->validated(), $this->cart);
+        }
 
         $this->cart->clear();
 

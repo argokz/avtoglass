@@ -2,7 +2,6 @@
     'model' => null,
     'brand' => null,
     'name' => null,
-    'class' => 'w-full h-32',
 ])
 
 @php
@@ -12,6 +11,9 @@
     $photo = $model?->imageUrl();
     $logo = $brandModel?->logoUrl();
     $normalized = mb_strtolower($modelName);
+    $extra = (string) ($attributes->get('class') ?? '');
+    $hasHeight = (bool) preg_match('/(?:^|\s)!?(?:sm:|md:|lg:|xl:)?h-/', $extra);
+    $hasWidth = (bool) preg_match('/(?:^|\s)!?(?:sm:|md:|lg:|xl:)?w-/', $extra);
 
     $bodyType = match (true) {
         str_contains($normalized, 'cruiser') || str_contains($normalized, 'patrol') || str_contains($normalized, 'tahoe') || str_contains($normalized, 'prado') || str_contains($normalized, 'pajero') => 'suv',
@@ -23,12 +25,16 @@
     };
 @endphp
 
-<div {{ $attributes->merge(['class' => "relative grid place-items-center overflow-hidden rounded-2xl bg-sunken p-3 text-muted $class"]) }}>
+<div {{ $attributes->class([
+    'relative grid place-items-center overflow-hidden rounded-2xl bg-sunken p-3 text-muted',
+    'h-32' => ! $hasHeight,
+    'w-full' => ! $hasWidth,
+]) }}>
     @if ($photo)
         <img src="{{ $photo }}" alt="{{ trim($brandName.' '.$modelName) }}"
              class="h-full w-full object-contain" loading="lazy" decoding="async">
     @else
-        <svg viewBox="0 0 160 80" class="h-full w-full max-h-24" fill="none" stroke="currentColor"
+        <svg viewBox="0 0 160 80" class="h-full w-full" fill="none" stroke="currentColor"
              stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
             @switch($bodyType)
                 @case('suv')

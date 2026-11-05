@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json.schemastore.org/lighthouserc",
+    "ci": {
+        "collect": {
+            "url": [
+                "http://127.0.0.1:18016/",
+                "http://127.0.0.1:18016/catalog",
+                "http://127.0.0.1:18016/search?q=camry",
+                "http://127.0.0.1:18016/catalog/toyota",
+                "http://127.0.0.1:18016/tovar/preview-camry-70",
+                "http://127.0.0.1:18016/chat"
+            ],
+            "numberOfRuns": 5,
+            "settings": {
+                "formFactor": "mobile",
+                "screenEmulation": { "mobile": true, "width": 390, "height": 900, "deviceScaleFactor": 1, "disabled": false }
+            }
+        },
+        "assert": {
+            "assertions": {
+                "categories:performance": ["warn", { "minScore": 0.8 }],
+                "categories:accessibility": ["error", { "minScore": 0.9 }],
+                "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+                "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+                "total-blocking-time": ["warn", { "maxNumericValue": 300 }]
+            }
+        }
+    }
+}

@@ -40,6 +40,10 @@ class StockLedger
     /** Сколько единиц отложено под чужие заказы. */
     public function held(Offer $offer): int
     {
+        if (array_key_exists('held_qty', $offer->getAttributes())) {
+            return (int) $offer->getAttribute('held_qty');
+        }
+
         return (int) StockReservation::query()
             ->where('offer_id', $offer->getKey())
             ->held()
@@ -192,6 +196,28 @@ class StockLedger
             ->with('order')
             ->chunkById(200, function ($reservations) use (&$released, $offerIds) {
                 foreach ($reservations as $reservation) {
+                    if ($reservation->order?->purchase_draft_id) {
+                        DB::transaction(function () use ($reservation, &$released, $offerIds) {
+                            $order = Order::query()->whereKey($reservation->order_id)->lockForUpdate()->first();
+                            $locked = StockReservation::query()->whereKey($reservation->id)->lockForUpdate()->first();
+                            if (! $order || ! $locked || $locked->status !== ReservationStatus::Held || ! $locked->expires_at || $locked->expires_at->isFuture()) {
+                                return;
+                            }
+                            if ($order->purchase_state === 'paid' && $order->isPaid()) {
+                                $locked->forceFill(['expires_at' => null])->save();
+
+                                return;
+                            }
+                            $locked->forceFill(['status' => ReservationStatus::Released])->save();
+                            if ($order->purchase_state === 'confirmed') {
+                                $order->forceFill(['purchase_state' => 'reservation_expired'])->save();
+                            }
+                            $offerIds->push($locked->offer_id);
+                            $released++;
+                        });
+
+                        continue;
+                    }
                     $reservation->update(['status' => ReservationStatus::Released]);
                     $offerIds->push($reservation->offer_id);
 

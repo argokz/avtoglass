@@ -7,13 +7,13 @@
     $ценаДо = $product->sellingPriceMax($покупатель);
 @endphp
 
-<article class="card card-hover group relative flex flex-col overflow-hidden">
+<article class="product-card card card-hover group relative flex flex-col overflow-hidden">
     <a href="{{ route('catalog.product', $product) }}" class="flex flex-1 flex-col">
         <div class="relative aspect-4/3 overflow-hidden bg-sunken">
-            @if ($product->imageUrl())
-                <img src="{{ $product->imageUrl() }}" alt="{{ $product->name }}"
-                     loading="lazy" decoding="async"
-                     class="h-full w-full object-cover transition duration-300 group-hover:scale-105">
+            @if ($product->image_path)
+                <x-picture :path="$product->image_path" :alt="$product->name"
+                           sizes="(min-width: 1024px) 20vw, 50vw"
+                           class="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
             @else
                 <div class="h-full w-full transition duration-300 group-hover:scale-[1.02]">
                     <x-glass-blueprint :product="$product" :showDimensions="false" :showOptions="false" class="h-full w-full rounded-none" />
@@ -21,6 +21,9 @@
             @endif
 
             <div class="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
+                @if ($product->isMadeInKz())
+                    <span class="badge badge-ok">Сделано в Казахстане</span>
+                @endif
                 @if ($product->camera)
                     <span class="badge badge-warn">Камера</span>
                 @endif
@@ -44,7 +47,7 @@
                 {{ $product->name }}
             </h3>
 
-            @if ($опт && $product->eurocode)
+            @if ($product->eurocode)
                 <p class="mt-1 font-mono text-xs text-muted">{{ $product->eurocode }}</p>
             @endif
 
@@ -54,15 +57,15 @@
                 </p>
             @endif
 
-            <div class="mt-auto flex items-end justify-between gap-2 pt-3">
+            <div class="product-card-price mt-auto flex items-end justify-between gap-2 pt-3">
                 @if ($ценаОт)
                     <div>
                         <div class="price price-brand text-lg sm:text-xl">
-                            {{ number_format($ценаОт, 0, ',', ' ') }} ₸
+                            {{ formatPrice($ценаОт) }} ₸
                         </div>
                         @if ($ценаДо && $ценаДо > $ценаОт)
                             <div class="mt-0.5 text-xs text-faint">
-                                до {{ number_format($ценаДо, 0, ',', ' ') }} ₸
+                                до {{ formatPrice($ценаДо) }} ₸
                             </div>
                         @endif
                     </div>
@@ -71,9 +74,8 @@
                 @endif
 
                 @unless ($опт && settings()->enabled('cart'))
-                    <span class="btn btn-primary btn-sm pointer-events-none opacity-0 transition
-                                 group-hover:opacity-100 max-sm:opacity-100 max-sm:!px-3">
-                        Выбрать
+                    <span class="product-card-link">
+                        Выбрать →
                     </span>
                 @endunless
             </div>
@@ -87,5 +89,14 @@
                 В корзину
             </button>
         </form>
+    @elseif (settings()->enabled('cart'))
+        <div class="border-t border-line p-3">
+            <button type="button"
+                    data-quick-order="{{ route('order.quick', $product) }}"
+                    data-quick-order-name="{{ $product->name }}"
+                    class="btn btn-outline btn-sm w-full !rounded-xl">
+                Купить в 1 клик
+            </button>
+        </div>
     @endif
 </article>

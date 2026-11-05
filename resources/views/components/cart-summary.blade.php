@@ -7,7 +7,7 @@
 
 @php
     $quote = $quotes[$fulfillment] ?? $quotes['installation'] ?? ['glass' => 0, 'works' => 0, 'visit' => 0, 'total' => 0, 'hasItemsWithoutPrice' => false];
-    $fmt = fn (float $n) => number_format($n, 0, ',', ' ').' ₸';
+    $fmt = fn (float $n) => formatPrice($n).' ₸';
 @endphp
 
 <div class="card p-5 shadow-lift" data-cart-summary>

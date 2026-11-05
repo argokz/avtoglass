@@ -23,6 +23,8 @@
         </div>
     </div>
 
+    @include('livewire.partials.wholesale-quick')
+
     {{-- Поиск и фильтры --}}
     <div class="card mt-5 flex flex-wrap items-center gap-3 px-4 py-3.5">
         <div class="relative min-w-0 flex-1 sm:max-w-sm">
@@ -31,11 +33,11 @@
                 <path stroke-linecap="round" d="m21 21-4.3-4.3M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/>
             </svg>
             <input type="search" wire:model.live.debounce.400ms="q"
-                   placeholder="Еврокод, OEM, артикул или название"
+                   aria-label="Поиск оптовых предложений" placeholder="Еврокод, OEM, артикул или название"
                    class="input !rounded-pill !py-2.5 !pl-10 !text-sm">
         </div>
 
-        <select wire:model.live="type" class="select !w-auto !rounded-pill !py-2 !text-sm !font-semibold">
+        <select aria-label="Тип стекла" wire:model.live="type" class="select !w-auto !rounded-pill !py-2 !text-sm !font-semibold">
             <option value="">Все типы</option>
             @foreach ($types as $glassType)
                 @if ($glassType !== App\Enums\GlassType::Service)
@@ -44,7 +46,7 @@
             @endforeach
         </select>
 
-        <select wire:model.live="supplierId" class="select !w-auto !rounded-pill !py-2 !text-sm !font-semibold">
+        <select aria-label="Производитель стекла" wire:model.live="supplierId" class="select !w-auto !rounded-pill !py-2 !text-sm !font-semibold">
             <option value="0">Все марки стекла</option>
             @foreach ($suppliers as $supplier)
                 <option value="{{ $supplier->id }}">{{ $supplier->name }}</option>
@@ -58,14 +60,14 @@
     </div>
 
     {{-- Таблица (десктоп) --}}
-    <div class="card mt-4 hidden !p-0 md:block">
+    <div class="card mt-4 hidden overflow-x-auto !p-0 md:block">
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-line text-left text-xs text-muted">
                     <th class="px-4 py-3 font-bold"></th>
                     <th class="px-4 py-3 font-bold">Стекло</th>
                     <th class="px-4 py-3 font-bold">Марка</th>
-                    <th class="px-4 py-3 font-bold">Наличие</th>
+                    <th class="px-4 py-3 font-bold">Срок</th>
                     <th class="px-4 py-3 text-right font-bold">Цена</th>
                     <th class="px-4 py-3 text-center font-bold">Кол-во</th>
                     <th class="px-4 py-3 text-right font-bold">Сумма</th>
@@ -95,15 +97,13 @@
                         </td>
                         <td class="px-4 py-3 whitespace-nowrap">{{ $offer->supplier?->name }}</td>
                         <td class="px-4 py-3">
-                            @if ($offer->product?->in_stock)
-                                <span class="badge badge-ok">В наличии</span>
-                            @else
-                                <span class="badge badge-muted">Под заказ</span>
-                            @endif
+                            @php $срок = App\Domain\Catalog\Availability::fromArray($availability[$offer->id] ?? null); @endphp
+                            <span @class(['badge whitespace-nowrap', 'badge-ok' => $срок->state === 'in_stock', 'badge-muted' => $срок->state !== 'in_stock'])
+                                  title="{{ $срок->label() }}">{{ $срок->state === 'in_stock' ? 'В наличии' : 'Под заказ · '.$срок->short() }}</span>
                         </td>
                         <td class="px-4 py-3 text-right font-bold whitespace-nowrap">
                             @if ($цена)
-                                {{ number_format($цена, 0, ',', ' ') }} ₸
+                                {{ formatPrice($цена) }} ₸
                             @else
                                 <span class="text-faint">по запросу</span>
                             @endif
@@ -120,7 +120,7 @@
                         </td>
                         <td class="px-4 py-3 text-right font-bold whitespace-nowrap">
                             @if ($выбран && $цена)
-                                {{ number_format($цена * $колво, 0, ',', ' ') }} ₸
+                                {{ formatPrice($цена * $колво) }} ₸
                             @else
                                 <span class="text-faint">—</span>
                             @endif
@@ -159,17 +159,15 @@
                         </span>
                         <span class="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
                             <span class="font-semibold text-ink">{{ $offer->supplier?->name }}</span>
-                            @if ($offer->product?->in_stock)
-                                <span class="badge badge-ok">В наличии</span>
-                            @else
-                                <span class="badge badge-muted">Под заказ</span>
-                            @endif
+                            @php $срок = App\Domain\Catalog\Availability::fromArray($availability[$offer->id] ?? null); @endphp
+                            <span @class(['badge whitespace-nowrap', 'badge-ok' => $срок->state === 'in_stock', 'badge-muted' => $срок->state !== 'in_stock'])
+                                  title="{{ $срок->label() }}">{{ $срок->state === 'in_stock' ? 'В наличии' : 'Под заказ · '.$срок->short() }}</span>
                         </span>
                     </span>
                     <span class="shrink-0 text-right">
                         <span class="block font-bold whitespace-nowrap">
                             @if ($цена)
-                                {{ number_format($цена, 0, ',', ' ') }} ₸
+                                {{ formatPrice($цена) }} ₸
                             @else
                                 <span class="text-faint">по запросу</span>
                             @endif
@@ -184,7 +182,7 @@
                                class="input !w-24 !rounded-xl !px-2 !py-1.5 !text-center !text-sm">
                         <span class="font-bold">
                             @if ($цена)
-                                {{ number_format($цена * $колво, 0, ',', ' ') }} ₸
+                                {{ formatPrice($цена * $колво) }} ₸
                             @endif
                         </span>
                     </div>
@@ -208,9 +206,20 @@
                 <p class="text-sm">
                     Выбрано: <strong>{{ $totals['positions'] }}</strong> поз. ·
                     <strong>{{ $totals['pieces'] }}</strong> шт ·
-                    <strong class="price price-brand">{{ number_format($totals['total'], 0, ',', ' ') }} ₸</strong>
+                    <strong class="price price-brand">{{ formatPrice($totals['total']) }} ₸</strong>
                 </p>
-                <a href="#opt-form" class="btn btn-primary btn-sm !rounded-xl">Оформить заявку</a>
+                <div class="flex flex-wrap items-center gap-2">
+                    <form wire:submit="saveList" class="flex items-center gap-1.5">
+                        <input type="text" wire:model="listName" maxlength="80" aria-label="Название списка"
+                               placeholder="Название списка"
+                               class="input !w-36 !rounded-xl !py-1.5 !text-sm @error('listName') input-error @enderror">
+                        <button type="submit" class="btn btn-outline btn-sm !rounded-xl">Сохранить список</button>
+                    </form>
+                    <button type="button" wire:click="clearSelection" wire:confirm="Снять все отметки?"
+                            class="btn btn-ghost btn-sm !rounded-xl">Очистить</button>
+                    <a href="#opt-form" class="btn btn-primary btn-sm !rounded-xl">Оформить заявку</a>
+                </div>
+                @error('listName')<p class="w-full text-xs text-warn-ink">{{ $message }}</p>@enderror
             </div>
         </div>
 
@@ -251,7 +260,7 @@
                         <span class="flex shrink-0 items-center gap-3">
                             @php $цена = $offer->sellingPrice($customer); @endphp
                             @if ($цена)
-                                <span class="font-semibold">{{ number_format($цена * (int) ($qty[$offer->id] ?? 1), 0, ',', ' ') }} ₸</span>
+                                <span class="font-semibold">{{ formatPrice($цена * (int) ($qty[$offer->id] ?? 1)) }} ₸</span>
                             @endif
                             <button type="button" wire:click="remove({{ $offer->id }})"
                                     class="text-faint transition hover:text-brand-ink" aria-label="Убрать">
@@ -316,7 +325,7 @@
             @endif
 
             <button type="submit" class="btn btn-primary btn-lg w-full !rounded-2xl">
-                Отправить заявку · {{ number_format($totals['total'], 0, ',', ' ') }} ₸
+                Отправить заявку · {{ formatPrice($totals['total']) }} ₸
             </button>
             <p class="text-center text-xs text-faint">
                 Оплату предложит менеджер после рассмотрения: счёт, онлайн или при получении.

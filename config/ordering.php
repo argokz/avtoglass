@@ -2,10 +2,14 @@
 
 return [
     'api_enabled' => (bool) env('ORDERING_API_ENABLED', false),
+    // Витрина оформляет заказы через DraftService/SubmitDraft вместо legacy CreateOrder.
+    'storefront_core' => (bool) env('ORDERING_STOREFRONT_CORE', false),
     // Automatic retail confirm + full reserve. Off until catalogue offers and payments are ready.
     'auto_checkout_enabled' => (bool) env('ORDERING_AUTO_CHECKOUT_ENABLED', false),
+    'wholesale_auto_checkout_enabled' => (bool) env('ORDERING_WHOLESALE_AUTO_CHECKOUT_ENABLED', false),
+    'online_reservation_minutes' => max(1, (int) env('ORDERING_ONLINE_RESERVATION_MINUTES', 15)),
     'idempotency_result_hours' => 24,
-    'quote_ttl_minutes' => 15,
+    'quote_ttl_minutes' => max(1, (int) env('ORDERING_QUOTE_TTL_MINUTES', 15)),
     'stock_freshness_hours' => 24,
     'fitment' => [
         // These physical options must be answered explicitly for automatic vehicle fitment.

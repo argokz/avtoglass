@@ -8,6 +8,7 @@
 
 @section('content')
 
+<p class="eyebrow mb-3">КАТАЛОГ АВТОСТЁКОЛ</p>
 <h1 class="text-2xl font-bold sm:text-3xl">
     @if ($q)
         Результаты по запросу «{{ $q }}»
@@ -110,7 +111,7 @@
             <h2 class="text-lg font-extrabold">Стёкла</h2>
             <p class="mt-1 text-sm text-muted">Найдено позиций: {{ $products->total() }}</p>
 
-            <div class="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <div class="catalog-grid mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
                 @foreach ($products as $product)
                     <x-product-card :product="$product" />
                 @endforeach

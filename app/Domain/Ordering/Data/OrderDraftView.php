@@ -25,6 +25,7 @@ final readonly class OrderDraftView implements JsonSerializable
         return new self($draft->id, $draft->version, [
             'sales_mode' => $draft->sales_mode->value, 'status' => $draft->status, 'locale' => $draft->locale,
             'vehicle' => $draft->vehicle, 'contacts' => $draft->contacts, 'fulfillment' => $draft->fulfillment,
+            'payment_method' => $draft->payment_method ?? 'cash',
             'items' => $items, 'updated_at' => $draft->updated_at->utc()->toIso8601String(),
         ]);
     }

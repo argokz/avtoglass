@@ -9,6 +9,7 @@ return [
      * поэтому переключение — это одна строка здесь.
      */
     'driver' => env('PAYMENT_DRIVER', 'test'),
+    'verified_drivers' => array_values(array_filter(array_map('trim', explode(',', (string) env('PAYMENTS_VERIFIED_DRIVERS', ''))))),
 
     /*
      * Секрет для подписи колбэков заглушки. У боевой кассы вместо него

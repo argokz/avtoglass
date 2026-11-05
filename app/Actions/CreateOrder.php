@@ -4,11 +4,13 @@ namespace App\Actions;
 
 use App\Cart\Cart;
 use App\Catalog\Vin;
+use App\Domain\Risk\AssessOrderRisk;
+use App\Domain\Risk\RiskLevel;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
-use App\Jobs\AnnounceNewOrder;
 use App\Enums\UserRole;
+use App\Jobs\AnnounceNewOrder;
 use App\Models\Customer;
 use App\Models\Interaction;
 use App\Models\Offer;
@@ -81,11 +83,29 @@ class CreateOrder
             $customer->increment('orders_count');
 
             Interaction::system($order, 'Заявка создана: '.$source->label());
-            $this->scheduleCallback($order);
-            $this->announce($order);
+            $this->assessAndFollowUp($order);
 
             return $order;
         });
+    }
+
+    /**
+     * Антифрод и дальнейшие действия по свежей заявке.
+     *
+     * Заблокированная заявка остаётся в базе, но смена о ней не узнаёт:
+     * ни оповещения, ни задачи на перезвон. Помеченная к проверке живёт
+     * обычной жизнью плюс задача «проверить до звонка».
+     */
+    private function assessAndFollowUp(Order $order): void
+    {
+        $risk = app(AssessOrderRisk::class)->apply($order, request()->ip());
+
+        if ($risk === RiskLevel::Block) {
+            return;
+        }
+
+        $this->scheduleCallback($order);
+        $this->announce($order);
     }
 
     /**
@@ -169,8 +189,7 @@ class CreateOrder
                 'Заявка создана: корзина, позиций '.$cart->items()->count()
             );
 
-            $this->scheduleCallback($order);
-            $this->announce($order);
+            $this->assessAndFollowUp($order);
 
             return $order;
         });

@@ -11,6 +11,7 @@
 @section('content')
 
 <div class="mx-auto max-w-lg py-6">
+    <p class="eyebrow mb-3">ВАШИ АВТОМОБИЛИ И ЗАЯВКИ</p>
     <h1 class="text-2xl font-extrabold sm:text-3xl">Вход в кабинет</h1>
     <p class="mt-2 text-sm text-muted">
         По тому же телефону, что оставляли в заявке.

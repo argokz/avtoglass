@@ -63,6 +63,7 @@ class ProductResource extends Resource
     {
         return [
             RelationManagers\OffersRelationManager::class,
+            RelationManagers\FitmentsRelationManager::class,
         ];
     }
 

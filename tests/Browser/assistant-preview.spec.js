@@ -45,7 +45,7 @@ async function capture(page, info, name) {
 test.beforeEach(async ({page, baseURL}) => {
     const url = new URL(baseURL);
     expect(['localhost', '127.0.0.1']).toContain(url.hostname);
-    expect(url.port).toBe('8015');
+    expect(['8015', '18015']).toContain(url.port);
     await page.goto('/preview/ux?view=chat');
     await expect(page.locator('#chat-input')).toBeVisible();
 });

@@ -26,12 +26,16 @@
 
     <p class="mt-2 text-muted">
         Заказ <span class="font-display font-extrabold text-ink">{{ $payment->order->number }}</span>
-        на {{ number_format((float) $payment->amount, 0, ',', ' ') }} ₸
+        на {{ number_format((float) $payment->amount, 2, ',', ' ') }} ₸
     </p>
 
     @if ($paid)
         <div class="card mt-6 p-5 text-left text-sm text-muted">
-            @if (settings()->enabled('display_stock') && settings()->enabled('reservations'))
+            @if ($payment->order->purchase_state === 'paid_review')
+                Оплата получена. Менеджер проверяет возможность исполнения заказа и свяжется с вами.
+            @elseif ($payment->order->purchase_draft_id)
+                Оплата получена. Состав, получение и документы доступны на странице заказа.
+            @elseif (settings()->enabled('display_stock') && settings()->enabled('reservations'))
                 Стекло зарезервировано за вами. Менеджер свяжется, чтобы согласовать
                 время замены или доставки — отдельно платить за работу при получении не придётся,
                 он назовёт итог заранее.
@@ -51,6 +55,9 @@
     @endif
 
     <div class="mt-6 flex flex-wrap justify-center gap-3">
+        @if ($payment->order->purchase_draft_id)
+            <a href="{{ route('purchase.show', $payment->order->public_token) }}" class="btn btn-primary">Мой заказ</a>
+        @endif
         @if (! $paid && settings()->enabled('payments') && session('last_order_number') === $payment->order->number)
             <form method="post" action="{{ route('payment.start') }}">
                 @csrf

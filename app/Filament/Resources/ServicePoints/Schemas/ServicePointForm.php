@@ -23,9 +23,11 @@ class ServicePointForm
                     ->maxLength(64),
                 TextInput::make('phone')
                     ->tel(),
+                \Filament\Forms\Components\Select::make('timezone')->label('Часовой пояс')
+                    ->options(array_combine(\DateTimeZone::listIdentifiers(), \DateTimeZone::listIdentifiers()))->searchable()->required()->default('Asia/Qyzylorda'),
                 TextInput::make('bays')
                     ->required()
-                    ->numeric()
+                    ->integer()->minValue(1)->maxValue(50)
                     ->default(1),
                 TimePicker::make('opens_at')
                     ->required(),

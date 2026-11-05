@@ -6,6 +6,7 @@ namespace App\Domain\Identity;
 
 use App\Domain\Ordering\SalesMode;
 use App\Domain\Shared\PurchaseException;
+use App\Models\Customer;
 use App\Models\User;
 use InvalidArgumentException;
 
@@ -19,6 +20,7 @@ final readonly class BuyerContext
         public string $locale,
         public bool $wholesaleApproved,
         public int $discountBasisPoints,
+        private bool $staffReview = false,
     ) {
         if (! in_array($locale, ['ru', 'kk'], true)) {
             throw new InvalidArgumentException('Unsupported buyer locale.');
@@ -50,7 +52,23 @@ final readonly class BuyerContext
 
     public function fresh(): self
     {
+        if ($this->staffReview) {
+            return self::review(User::query()->findOrFail($this->actorId), $this->customerId, $this->locale);
+        }
+
         return $this->actorId === null ? $this : self::account($this->actorId, $this->locale);
+    }
+
+    /** Only an authorized staff service may prepare terms on behalf of a customer. Never an HTTP buyer adapter. */
+    public static function review(User $staff, int $customerId, string $locale = 'ru'): self
+    {
+        if (! $staff->is_active || ! $staff->role->canWorkWithOrders()) {
+            throw new PurchaseException('FORBIDDEN', 403);
+        }
+        $customer = Customer::query()->findOrFail($customerId);
+        $approved = $customer->seesWholesalePrices();
+
+        return new self($staff->id, $customerId, null, $locale, $approved, $approved ? max(0, min(40, (int) $customer->wholesale_discount_percent)) * 100 : 0, true);
     }
 
     public function assertMode(SalesMode $mode): void

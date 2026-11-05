@@ -9,6 +9,10 @@
 /bootstrap/cache/config.testing.php
 /test-results
 /playwright-report
+/.playwright-cli
+/output/playwright
+/output/assistant-*
+/output/pdf/assistant-*
 .phpactor.json
 .phpunit.result.cache
 /.codex

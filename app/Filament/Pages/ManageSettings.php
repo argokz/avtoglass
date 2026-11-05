@@ -103,6 +103,17 @@ class ManageSettings extends Page implements HasForms
                             ->helperText('Выбивать чек в ОФД после оплаты. Нужны ключи Webkassa.'),
                     ]),
 
+                Section::make('Тарифы доставки для оформления')
+                    ->description('Явный тариф и допустимые поставщики. Без подтверждённого правила доставку согласует менеджер.')
+                    ->schema([
+                        \Filament\Forms\Components\Repeater::make('delivery_policies')->label('Правила доставки')->schema([
+                            TextInput::make('city')->label('Город')->required()->maxLength(120),
+                            TextInput::make('fee')->label('Доставка, ₸')->required()->regex('/^\d{1,9}([.,]\d{1,2})?$/')->helperText('0 означает явно бесплатную доставку'),
+                            \Filament\Forms\Components\Select::make('supplier_ids')->label('Поставщики')->multiple()->searchable()->options(fn () => \App\Models\Supplier::query()->where('is_active', true)->pluck('name', 'id')->all())->required(),
+                            TextInput::make('source')->label('Основание тарифа')->required()->maxLength(190),
+                            Toggle::make('verified')->label('Тариф проверен и действует'),
+                        ])->default([])->maxItems(100),
+                    ]),
                 Section::make('Опт')
                     ->description('Пороги оптовой заявки. 0 — без ограничений, любая заявка проходит.')
                     ->columns(2)
@@ -120,12 +131,12 @@ class ManageSettings extends Page implements HasForms
                     ]),
 
                 Section::make('AI-помощник')
-                    ->description('Чат с Gemini на витрине: подбирает стекло и оформляет заявку диалогом. Ключи — только в .env (GEMINI_API_KEY, GEMINI_API_KEY_SECOND).')
+                    ->description('Помощник подбирает стекло и готовит заявку для подтверждения. Бесплатный Gemini или локальная модель LiteLLM выбираются через AI_PROVIDER_MODE. Ключи хранятся в .env.')
                     ->columns(2)
                     ->schema([
                         Toggle::make('ai_assistant')
                             ->label('AI-помощник на сайте')
-                            ->helperText('Без ключа в .env чат не появится'),
+                            ->helperText('Нужен настроенный провайдер и работающий обработчик очереди ai'),
                         TextInput::make('ai_cooldown_minutes')
                             ->label('Пауза модели после лимита, мин')
                             ->numeric()

@@ -17,7 +17,7 @@
 
         <p class="mt-4 text-sm text-muted">Заказ {{ $payment->order->number }}</p>
         <div class="font-display text-4xl font-extrabold tracking-tight">
-            {{ number_format((float) $payment->amount, 0, ',', ' ') }} ₸
+            {{ number_format((float) $payment->amount, 2, ',', ' ') }} ₸
         </div>
 
         <p class="mt-4 text-sm text-muted">

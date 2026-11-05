@@ -6,9 +6,11 @@
         "build": "vite build",
         "dev": "vite",
         "test:e2e": "playwright test",
-        "test:e2e:report": "playwright show-report"
+        "test:e2e:report": "playwright show-report",
+        "audit:lighthouse": "node scripts/audit/lighthouse.mjs"
     },
     "devDependencies": {
+        "@lhci/cli": "^0.15.0",
         "@playwright/test": "^1.63.0",
         "@tailwindcss/vite": "^4.0.0",
         "concurrently": "^9.0.1",

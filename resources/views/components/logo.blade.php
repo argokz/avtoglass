@@ -4,22 +4,15 @@
 ])
 
 @php
-    $высота = $size === 'lg' ? 'h-12 sm:h-16' : 'h-10 sm:h-12';
     $имя = settings()->brandName();
 @endphp
 
-<span {{ $attributes->merge(['class' => 'flex min-w-0 items-center']) }}>
-    {{--
-        Знак без фона: белая машина, красная рамка, слово на белой полосе.
-        Плашку не кладём — чёрный прямоугольник был артефактом исходного JPEG.
-        На светлой шапке лёгкая тень держит белый силуэт; в подвале она не нужна.
-    --}}
-    <img src="{{ asset('images/logo.png') }}"
-         alt="{{ $имя }}"
-         width="902" height="330"
-         @class([
-             $высота,
-             'w-auto max-w-[13.5rem] object-contain object-left sm:max-w-[18rem]',
-             'drop-shadow-[0_1px_1px_rgba(15,18,24,0.22)]' => ! $onNight,
-         ])>
+<span {{ $attributes->class(['brand-logo', 'brand-logo-lg' => $size === 'lg', 'brand-logo-night' => $onNight]) }}>
+    @unless ($onNight)
+        <img src="{{ asset('images/logo-light.png') }}?v=20261008" alt="{{ $имя }}"
+             width="1672" height="941" class="brand-logo-light" decoding="async">
+    @endunless
+    <img src="{{ asset('images/logo.png') }}?v=20261008" alt="{{ $onNight ? $имя : '' }}"
+         @unless ($onNight) aria-hidden="true" @endunless
+         width="1774" height="887" class="brand-logo-dark" decoding="async">
 </span>

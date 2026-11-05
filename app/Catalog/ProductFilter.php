@@ -42,6 +42,8 @@ readonly class ProductFilter
          * и выбирают именно по нему. В базе марка стекла живёт как поставщик.
          */
         public ?int $supplierId = null,
+        /** Только отечественный товар: приоритет «Сделано в Казахстане». */
+        public bool $kzOnly = false,
     ) {}
 
     public static function fromRequest(Request $request, ?int $carModelId = null): self
@@ -60,6 +62,7 @@ readonly class ProductFilter
             sort: ProductSort::tryFrom((string) $request->query('sort')) ?? ProductSort::PriceAsc,
             inStockOnly: $request->boolean('in_stock'),
             supplierId: ((int) $request->query('brand')) ?: null,
+            kzOnly: $request->boolean('kz'),
         );
     }
 
@@ -72,7 +75,28 @@ readonly class ProductFilter
     public function hasAnyFilter(): bool
     {
         return $this->type !== null || $this->options !== [] || $this->inStockOnly
-            || $this->year !== null || $this->supplierId !== null;
+            || $this->year !== null || $this->supplierId !== null || $this->kzOnly;
+    }
+
+    /**
+     * Ключ счётчиков фильтров: список товаров от него не зависит,
+     * страница пагинации тоже. Сортировку не включаем — чипсы от неё не меняются.
+     */
+    public function facetCacheKey(): string
+    {
+        $options = $this->options;
+        sort($options);
+
+        return hash('sha256', json_encode([
+            $this->carModelId,
+            $this->type?->value,
+            $options,
+            $this->year,
+            $this->query,
+            $this->inStockOnly,
+            $this->supplierId,
+            $this->kzOnly,
+        ], JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -96,6 +120,7 @@ readonly class ProductFilter
             'sort' => $this->sort === ProductSort::PriceAsc ? null : $this->sort->value,
             'in_stock' => $this->inStockOnly ? 1 : null,
             'brand' => $this->supplierId,
+            'kz' => $this->kzOnly ? 1 : null,
             'q' => $this->query,
         ];
 

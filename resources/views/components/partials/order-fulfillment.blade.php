@@ -80,6 +80,8 @@
         <legend class="mb-3 text-sm font-extrabold tracking-tight">Оплата</legend>
         <div class="grid gap-2 sm:grid-cols-2">
             @foreach (App\Enums\PaymentMethod::cases() as $method)
+                @continue($method === App\Enums\PaymentMethod::Invoice && ! (текущийПокупатель()?->seesWholesalePrices() ?? false))
+                @continue(\App\Domain\Ordering\StorefrontCheckout::enabled() && ! array_key_exists($method->value, \App\Domain\Ordering\PaymentOptions::available(\App\Domain\Identity\SessionBuyer::current())))
                 <label class="flex cursor-pointer items-start gap-3 rounded-2xl border border-line
                               bg-surface p-3.5 text-sm transition hover:border-brand/40
                               has-checked:border-brand has-checked:bg-brand-soft">

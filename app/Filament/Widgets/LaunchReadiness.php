@@ -102,6 +102,23 @@ class LaunchReadiness extends StatsOverviewWidget
 
         return [
             [
+                'label' => 'Отладка',
+                'ok' => ! config('app.debug'),
+                'detail' => config('app.debug')
+                    ? 'APP_DEBUG включён — выключите перед публичным выпуском'
+                    : 'Подробности ошибок скрыты от посетителей',
+            ],
+            [
+                'label' => 'Сессии',
+                'ok' => ! app()->isProduction()
+                    || ((bool) config('session.encrypt') && (bool) config('session.secure')),
+                'detail' => app()->isProduction()
+                    ? (((bool) config('session.encrypt') && (bool) config('session.secure'))
+                        ? 'Сессии шифруются, куки только по HTTPS'
+                        : 'SESSION_ENCRYPT / SESSION_SECURE_COOKIE выключены на бою')
+                    : 'На разработке требования к сессиям мягче',
+            ],
+            [
                 'label' => 'Касса',
                 'ok' => $driver !== 'test',
                 'detail' => $driver === 'test'
@@ -121,8 +138,8 @@ class LaunchReadiness extends StatsOverviewWidget
                 'detail' => $staleJobs > 0
                     ? "{$staleJobs} задач старше 10 мин — нужен queue:work"
                     : ($pendingJobs > 0
-                        ? "В очереди {$pendingJobs}, воркер, похоже, работает"
-                        : 'Очередь пуста'),
+                        ? "В очереди {$pendingJobs}; проверьте воркеры default и ai"
+                        : 'Очередь пуста; работа воркеров этим не подтверждается'),
             ],
             [
                 'label' => 'ОФД',

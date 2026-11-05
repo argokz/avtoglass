@@ -20,7 +20,7 @@ async function account(page, section) {
 test.beforeEach(async ({page, baseURL}) => {
     const url = new URL(baseURL);
     expect(['127.0.0.1', 'localhost']).toContain(url.hostname);
-    expect(url.port).toBe('8015');
+    expect(['8015', '18015']).toContain(url.port);
     await page.goto('/preview/ux');
     await expect(page.getByRole('button', {name: 'Начать заново', exact: true})).toBeEnabled();
 });

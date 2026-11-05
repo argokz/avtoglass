@@ -25,19 +25,26 @@ class CustomersTable
 
                 TextColumn::make('phone')
                     ->label('Телефон')
-                    ->searchable()
+                    // Шифротекст подстрокой не ищется — только точный номер через хэш.
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        $hash = Customer::phoneHash($search);
+
+                        return $hash !== null
+                            ? $query->where('phone_hash', $hash)
+                            : $query->whereRaw('1 = 0');
+                    })
                     ->url(fn (Customer $r) => 'tel:'.$r->phone)
                     ->copyable(),
 
                 TextColumn::make('wholesale_status')
                     ->label('Тип')
                     ->badge()
-                    ->formatStateUsing(fn ($state) => $state instanceof \App\Enums\WholesaleStatus
+                    ->formatStateUsing(fn ($state) => $state instanceof WholesaleStatus
                         ? $state->label()
-                        : \App\Enums\WholesaleStatus::tryFrom((string) $state)?->label())
-                    ->color(fn ($state) => match ($state instanceof \App\Enums\WholesaleStatus ? $state : \App\Enums\WholesaleStatus::tryFrom((string) $state)) {
-                        \App\Enums\WholesaleStatus::Wholesale => 'success',
-                        \App\Enums\WholesaleStatus::Pending => 'warning',
+                        : WholesaleStatus::tryFrom((string) $state)?->label())
+                    ->color(fn ($state) => match ($state instanceof WholesaleStatus ? $state : WholesaleStatus::tryFrom((string) $state)) {
+                        WholesaleStatus::Wholesale => 'success',
+                        WholesaleStatus::Pending => 'warning',
                         default => 'gray',
                     }),
 

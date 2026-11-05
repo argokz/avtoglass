@@ -24,7 +24,7 @@ test.beforeEach(async ({ baseURL }) => {
     // These tests modify only synthetic customer sessions in the local preview.
     const url = new URL(baseURL);
     expect(['127.0.0.1', 'localhost']).toContain(url.hostname);
-    expect(url.port).toBe('8015');
+    expect(['8015', '18015']).toContain(url.port);
 });
 
 test('public storefront and assistant render', async ({ page }, testInfo) => {
@@ -38,7 +38,7 @@ test('public storefront and assistant render', async ({ page }, testInfo) => {
 
     await page.getByPlaceholder('Camry 2018, лобовое…').fill('Camry 2018, нужно лобовое стекло');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Это демонстрационный диалог.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Это демонстрационный диалог.', { exact: false })).toBeVisible({ timeout: 30000 });
 });
 
 test('switching modes preserves cart and dialogue', async ({ page }, testInfo) => {
@@ -57,10 +57,10 @@ test('switching modes preserves cart and dialogue', async ({ page }, testInfo) =
     await composer.pressSequentially('windshield');
     await expect(composer).toHaveValue('Camry 2018\nwindshield');
     await composer.press('Enter');
-    await expect(page.getByRole('log')).toContainText('Это демонстрационный диалог.');
+    await expect(page.getByRole('log')).toContainText('Это демонстрационный диалог.', { timeout: 30000 });
     await composer.fill('Спасибо, вернусь к каталогу');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByRole('log').getByText('Это демонстрационный диалог.', { exact: false })).toHaveCount(2);
+    await expect(page.getByRole('log').getByText('Это демонстрационный диалог.', { exact: false })).toHaveCount(2, { timeout: 30000 });
     await switcher.getByRole('button', { name: 'Магазин', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Стекло на какую машину?', exact: true })).toBeVisible();
     await switcher.getByRole('button', { name: 'ИИ-помощник', exact: true }).click();

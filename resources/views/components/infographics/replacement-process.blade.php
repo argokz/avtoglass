@@ -64,4 +64,32 @@
             <p class="mt-1 text-xs text-muted">Печать гарантийного талона, памятка водителю на первые 48 часов.</p>
         </div>
     </div>
+
+    {{-- Памятка на первые 48 часов после замены --}}
+    <div class="mt-5 rounded-2xl border border-warn/30 bg-warn-soft/50 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <strong class="text-xs font-extrabold uppercase tracking-wider text-warn-ink">
+                Правила первых 48 часов после вклейки (для сохранения гарантии)
+            </strong>
+            <span class="text-[11px] font-semibold text-muted">Полимеризация герметика — 24–48 ч</span>
+        </div>
+        <div class="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-xl bg-surface/90 p-3">
+                <strong class="font-bold text-ink">Без мойки Kärcher</strong>
+                <p class="mt-0.5 text-muted">Не мыть авто под высоким давлением, чтобы струя не продавила свежий клеевой шов.</p>
+            </div>
+            <div class="rounded-xl bg-surface/90 p-3">
+                <strong class="font-bold text-ink">Ровная парковка</strong>
+                <p class="mt-0.5 text-muted">Не ставить машину одним колесом на бордюр и не поднимать домкратом / подъёмником.</p>
+            </div>
+            <div class="rounded-xl bg-surface/90 p-3">
+                <strong class="font-bold text-ink">Скотч — на 24 часа</strong>
+                <p class="mt-0.5 text-muted">Не снимать верхние фиксирующие ленты первые сутки — они держат уровень посадки.</p>
+            </div>
+            <div class="rounded-xl bg-surface/90 p-3">
+                <strong class="font-bold text-ink">Плавный ход до 80 км/ч</strong>
+                <p class="mt-0.5 text-muted">Избегать глубоких ям, резких торможений и сильного хлопанья дверями при закрытых окнах.</p>
+            </div>
+        </div>
+    </div>
 </div>

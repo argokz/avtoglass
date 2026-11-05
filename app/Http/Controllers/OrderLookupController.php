@@ -53,7 +53,7 @@ class OrderLookupController extends Controller
 
         $order = Order::query()
             ->where('number', $number)
-            ->whereHas('customer', fn ($query) => $query->where('phone', $phone))
+            ->whereHas('customer', fn ($query) => $query->where('phone_hash', Customer::phoneHash($phone)))
             ->first();
 
         if ($order === null) {
@@ -73,7 +73,7 @@ class OrderLookupController extends Controller
             return redirect()->route('orders.lookup');
         }
 
-        $customer = Customer::query()->where('phone', $phone)->first();
+        $customer = Customer::query()->where('phone_hash', Customer::phoneHash($phone))->first();
         $orders = $customer
             ? $customer->orders()->with('items')->latest()->get()
             : collect();

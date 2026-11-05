@@ -6,6 +6,8 @@ use App\Enums\GlassType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Once;
+use Illuminate\Support\Str;
 
 class Product extends Model
 {
@@ -13,11 +15,35 @@ class Product extends Model
 
     protected $guarded = [];
 
+    protected static function booted(): void
+    {
+        $flush = static fn () => Once::flush();
+        static::saved($flush);
+        static::deleted($flush);
+
+        /*
+         * Сборка каталога даёт свои slug и подпись, а товар из CRM приходит
+         * без них: в форме этих полей нет, и «Создать» падало на NOT NULL.
+         * Подпись ручного товара случайная — со строками прайса он не
+         * склеится, пока менеджер сам не решит, что это одно стекло.
+         */
+        static::creating(function (self $product): void {
+            $product->slug ??= self::freshSlug((string) $product->name);
+            $product->signature ??= hash('sha256', 'manual|'.Str::uuid());
+        });
+    }
+
+    /** Адрес из названия плюс случайный хвост: два «Лобовое Toyota Camry» не столкнутся. */
+    public static function freshSlug(string $name): string
+    {
+        return (Str::limit(Str::slug($name), 180, '') ?: 'steklo').'-'.Str::lower(Str::random(8));
+    }
+
     /** Опции стекла — из них строятся фильтры и мастер подбора. */
     public const OPTION_FLAGS = [
         'sun_band' => 'Солнцезащитная полоса',
         'rain_sensor' => 'Датчик дождя',
-        'camera' => 'Камера за стеклом',
+        'camera' => 'Камера ADAS за лобовым стеклом, не камера заднего вида',
         'heated_wipers' => 'Обогрев зоны щёток',
         'heated_full' => 'Полный электрообогрев',
         'heated_rear' => 'Обогрев заднего стекла',
@@ -77,6 +103,16 @@ class Product extends Model
     public function fitments(): HasMany
     {
         return $this->hasMany(Fitment::class);
+    }
+
+    /**
+     * Отечественный товар. По правилам площадок РК он получает приоритет
+     * в общей выдаче и отдельный бейдж — решаем это по коду страны,
+     * а не по подстроке в названии.
+     */
+    public function isMadeInKz(): bool
+    {
+        return $this->origin_country === 'KZ';
     }
 
     /** Включённые опции — для вывода в карточке. */

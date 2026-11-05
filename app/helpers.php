@@ -1,8 +1,20 @@
 <?php
 
+use App\Models\Customer;
+use App\Models\Offer;
+use App\Models\Product;
 use App\Settings\AppSettings;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\HtmlString;
+
+/** Display legacy decimal prices without discarding non-zero tiyn. */
+function formatPrice(float|int|string $amount): string
+{
+    $decimal = number_format((float) $amount, 2, '.', '');
+    $precision = str_ends_with($decimal, '.00') ? 0 : 2;
+
+    return number_format((float) $decimal, $precision, ',', ' ');
+}
 
 if (! function_exists('файлВитрины')) {
     /**
@@ -116,20 +128,20 @@ if (! function_exists('телефонДляГлаз')) {
 
 if (! function_exists('текущийПокупатель')) {
     /** Карточка вошедшего клиента. Сотрудник, открывший витрину, покупателем не считается. */
-    function текущийПокупатель(): ?\App\Models\Customer
+    function текущийПокупатель(): ?Customer
     {
         $user = auth()->user();
 
-        if ($user === null || $user->isStaff()) {
+        if ($user === null || $user->isStaff() || $user->customer_id === null) {
             return null;
         }
 
-        return $user->customer;
+        return $user->loadMissing('customer')->customer;
     }
 }
 
 if (! function_exists('ценаДляПокупателя')) {
-    function ценаДляПокупателя(\App\Models\Product $product, ?\App\Models\Offer $offer = null): ?float
+    function ценаДляПокупателя(Product $product, ?Offer $offer = null): ?float
     {
         $buyer = текущийПокупатель();
 

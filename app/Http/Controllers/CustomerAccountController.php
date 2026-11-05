@@ -86,7 +86,7 @@ class CustomerAccountController extends Controller
         }
 
         $user = DB::transaction(function () use ($data, $phone, $request) {
-            $customer = Customer::where('phone', $phone)->first();
+            $customer = Customer::where('phone_hash', Customer::phoneHash($phone))->first();
 
             /*
              * Ключевое место. Зарегистрироваться можно на любой номер — SMS мы

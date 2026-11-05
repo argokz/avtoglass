@@ -57,6 +57,17 @@ class CatalogTest extends TestCase
             ->assertSee('images/logo.png', false);
     }
 
+    public function test_главная_живёт_на_повторном_запросе_через_database_кэш(): void
+    {
+        config(['cache.default' => 'database']);
+
+        CarBrand::factory()->visible()->create(['name' => 'Toyota']);
+
+        $this->get('/')->assertOk()->assertSee('Toyota');
+        $this->get('/')->assertOk()->assertSee('Toyota');
+        $this->get(route('catalog.brands'))->assertOk()->assertSee('Toyota');
+    }
+
     /**
      * Цены на работы стоят на главной, а не прячутся за «уточняйте
      * по телефону»: это первый вопрос покупателя, и человек, получивший
@@ -266,6 +277,22 @@ class CatalogTest extends TestCase
 
         $this->post('/pick', ['brand' => $model->car_brand_id])
             ->assertRedirect('/catalog/toyota');
+    }
+
+    public function test_главная_после_подбора_показывает_стёкла_машины(): void
+    {
+        $model = $this->camry();
+        $product = $this->glassFor($model, ['name' => 'Лобовое Camry']);
+
+        $this->post('/pick', ['brand' => $model->car_brand_id, 'model' => $model->id, 'year' => 2018]);
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('Стёкла для Toyota Camry, 2018')
+            ->assertSee('Лобовое Camry');
+
+        $this->get('/')
+            ->assertOk()
+            ->assertSee($product->name);
     }
 
     public function test_апи_отдаёт_только_модели_с_товарами(): void

@@ -8,7 +8,11 @@ use App\Domain\Catalog\CheckFitment;
 use App\Domain\Fulfillment\QuoteFulfillment;
 use App\Domain\Identity\BuyerContext;
 use App\Domain\Ordering\Models\OrderDraft;
+use App\Domain\Ordering\PaymentOptions;
 use App\Domain\Ordering\SalesMode;
+use App\Domain\Risk\FraudContext;
+use App\Domain\Risk\FraudProvider;
+use App\Domain\Risk\RiskLevel;
 use App\Models\CarModel;
 use App\Models\Customer;
 use App\Models\Offer;
@@ -49,7 +53,7 @@ final class CalculateDraft
         if ($phone === null || ! preg_match('/^7[0-9]{10}$/D', $phone)) {
             $issues->add('CONTACT_PHONE_REQUIRED', 'incomplete', field: 'contacts.phone');
         }
-        if ($draft->sales_mode === SalesMode::Wholesale) {
+        if ($draft->sales_mode === SalesMode::Wholesale && ! config('ordering.wholesale_auto_checkout_enabled')) {
             $issues->add('WHOLESALE_REVIEW_REQUIRED');
         } elseif ($draft->items->count() > config('ordering.limits.retail_auto_max_items')) {
             $issues->add('LARGE_ORDER_REVIEW_REQUIRED');
@@ -101,7 +105,7 @@ final class CalculateDraft
             $knownGoods = $knownGoods->plus($lineTotal ?? Money::fromMinor(0));
             $goods[] = ['line_id' => $item->line_id, 'offer_id' => $item->offer_id, 'reference' => $item->reference,
                 'article' => $offer?->article ?? $item->article_snapshot, 'name' => $offer?->product?->name ?? $item->name, 'manufacturer' => $offer?->supplier?->name ?? $item->manufacturer,
-                'quantity' => $item->quantity, 'selection_mode' => $item->selection_mode, 'fitment' => $fitment,
+                'quantity' => $item->quantity, 'comment' => $item->comment, 'selection_mode' => $item->selection_mode, 'fitment' => $fitment,
                 'unit_price' => $price?->jsonSerialize(), 'total' => $lineTotal?->jsonSerialize(), 'available_quantity' => $available];
             if ($offer) {
                 $facts[] = ['offer_id' => $offer->id, 'retail' => $offer->price_retail, 'cost' => $offer->price_wholesale,
@@ -123,8 +127,25 @@ final class CalculateDraft
         $knownTotal = $knownGoods->plus($fulfillment['services_known_total'])->plus($deliveryTotal ?? Money::fromMinor(0));
         $total = $goodsTotal !== null && $servicesTotal !== null && $deliveryTotal !== null ? $knownTotal : null;
 
+        $paymentMethods = PaymentOptions::available($buyer);
+        $paymentMethod = $draft->payment_method ?? 'cash';
+        if (! array_key_exists($paymentMethod, $paymentMethods)) {
+            $issues->add('PAYMENT_METHOD_UNAVAILABLE', 'incomplete', field: 'payment_method');
+        }
+        $risk = app(FraudProvider::class)->assess(new FraudContext(
+            Customer::phoneHash($phone), null, $total ? (float) $total->decimal() : null, $draft->sales_mode->value,
+        ));
+        if ($risk->level !== RiskLevel::Allow) {
+            $issues->add('RISK_REVIEW_REQUIRED');
+        }
+
         return new QuoteCalculation([
             'sales_mode' => $draft->sales_mode->value, 'locale' => $draft->locale,
+            'billing' => $draft->sales_mode === SalesMode::Wholesale && $buyer->customerId !== null
+                ? (Customer::query()->find($buyer->customerId)?->only(['company_name', 'bin']) ?? []) : [],
+            'payment_method' => $paymentMethod, 'payment_methods' => $paymentMethods,
+            'allowed_actions' => $issues->readiness() === 'incomplete' ? [] : ($issues->readiness() === 'ready' && config($draft->sales_mode === SalesMode::Wholesale ? 'ordering.wholesale_auto_checkout_enabled' : 'ordering.auto_checkout_enabled')
+                ? [$draft->sales_mode === SalesMode::Wholesale ? 'confirm_wholesale' : 'confirm_retail', 'submit_for_review'] : ['submit_for_review']),
             'readiness' => $issues->readiness(), 'reasons' => $issues->codes(), 'issues' => $issues->all(),
             'items' => $goods, 'service_items' => $fulfillment['service_items'],
             'goods_total' => $goodsTotal?->jsonSerialize(), 'services_total' => $servicesTotal?->jsonSerialize(),

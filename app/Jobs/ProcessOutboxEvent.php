@@ -27,7 +27,7 @@ final class ProcessOutboxEvent implements ShouldQueue
     {
         $event = DB::transaction(function () {
             $event = OutboxEvent::query()->whereKey($this->outboxId)->lockForUpdate()->first();
-            if (! $event || ! in_array($event->status, ['pending', 'failed'], true)) {
+            if (! $event || $event->attempts >= 10 || ! in_array($event->status, ['pending', 'failed'], true)) {
                 return null;
             }
             if ($event->available_at->gt(CarbonImmutable::now('UTC'))) {
@@ -36,6 +36,7 @@ final class ProcessOutboxEvent implements ShouldQueue
             $event->forceFill([
                 'status' => 'processing',
                 'attempts' => $event->attempts + 1,
+                'available_at' => CarbonImmutable::now('UTC')->addMinutes(10),
             ])->save();
 
             return $event;

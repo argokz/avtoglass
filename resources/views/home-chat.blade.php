@@ -7,7 +7,7 @@
 @section('content')
 
 <div class="grid min-h-0 flex-1 gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-    <aside class="hidden rounded-card border border-line bg-surface p-5 lg:block" aria-label="Разделы помощника">
+    <aside class="assistant-guide hidden rounded-card border border-line bg-surface p-5 lg:block" aria-label="Разделы помощника">
         <p class="text-xs font-bold tracking-wider text-muted uppercase">Ваш подбор</p>
         <p class="mt-3 text-sm leading-relaxed text-muted">Опишите автомобиль и нужное стекло. Помощник уточнит детали и предложит варианты.</p>
         <nav class="mt-6 space-y-2" aria-label="Заказы и каталог">
@@ -25,7 +25,7 @@
         </div>
     </aside>
     <section class="flex min-w-0 flex-col" aria-labelledby="assistant-title">
-        <div class="mb-4">
+        <div class="page-heading mb-4">
             <h1 id="assistant-title" class="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">Подберём стекло вместе</h1>
             <p class="mt-2 text-sm text-muted sm:text-base">Начните с марки, модели и года. Например: «Camry 2018, нужно лобовое».</p>
         </div>

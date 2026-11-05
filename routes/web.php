@@ -12,6 +12,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PrivacyController;
 use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\StorefrontModeController;
+use App\Http\Controllers\SuggestController;
 use App\Http\Controllers\WholesaleController;
 use App\Http\Middleware\OnlyCustomers;
 use App\Http\Middleware\OnlyWholesale;
@@ -23,6 +24,12 @@ use Illuminate\Support\Facades\Route;
 require __DIR__.'/ordering.php';
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/preview/health', function () {
+    abort_unless(app()->environment('preview'), 404);
+
+    return response()->json(['preview' => 'avtoglass-isolated-v1'])
+        ->header('Cache-Control', 'no-store');
+})->name('preview.health');
 Route::get('/preview/ux', function () {
     abort_unless(app()->environment('preview'), 404);
 
@@ -34,6 +41,14 @@ Route::get('/chat', function () {
 
     return view('home-chat');
 })->name('assistant');
+Route::prefix('pokupka/{token}')->middleware('throttle:60,1')->group(function () {
+    Route::get('/', [\App\Http\Controllers\CustomerPurchaseController::class, 'show'])->name('purchase.show');
+    Route::post('/pay', [\App\Http\Controllers\CustomerPurchaseController::class, 'pay'])->name('purchase.pay');
+    Route::post('/accept', [\App\Http\Controllers\CustomerPurchaseController::class, 'accept'])->name('purchase.accept');
+    Route::post('/repeat', [\App\Http\Controllers\CustomerPurchaseController::class, 'repeat'])->name('purchase.repeat');
+    Route::post('/change', [\App\Http\Controllers\CustomerPurchaseController::class, 'change'])->name('purchase.change');
+    Route::get('/documents/{type}', [\App\Http\Controllers\CustomerPurchaseController::class, 'document'])->name('purchase.document');
+});
 Route::get('/search', [HomeController::class, 'search'])->name('search');
 Route::post('/pick', [HomeController::class, 'pick'])->name('pick');
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
@@ -57,9 +72,15 @@ Route::post('/gorod', function (Request $request) {
 // для зависимого селекта «марка -> модель» на главной
 Route::get('/api/brands/{brand:slug}/models', [HomeController::class, 'models'])->name('api.models');
 
+// Подсказки в строке поиска. Частые запросы — лимит щедрый, но есть.
+Route::get('/api/search/suggest', SuggestController::class)
+    ->middleware('throttle:60,1')
+    ->name('api.suggest');
+
 // Заявки. Ограничение по частоте — чтобы форму не залили ботами.
-Route::middleware('throttle:10,1')->group(function () {
+Route::middleware('throttle:orders')->group(function () {
     Route::post('/tovar/{product:slug}/zayavka', [OrderController::class, 'store'])->name('order.store');
+    Route::post('/tovar/{product:slug}/v-1-klik', [OrderController::class, 'quick'])->name('order.quick');
     Route::post('/podbor', [OrderController::class, 'selection'])->name('order.selection');
 });
 
@@ -69,7 +90,7 @@ Route::get('/korzina', [CartController::class, 'show'])->name('cart.show');
 // Оформление объявлено ДО маршрута со слагом: иначе «oformit» будет принят
 // за слаг товара, и Laravel вернёт 404 на попытку оформить заказ.
 Route::post('/korzina/oformit', [CartController::class, 'checkout'])
-    ->middleware('throttle:10,1')
+    ->middleware('throttle:orders')
     ->name('cart.checkout');
 
 Route::post('/korzina/{product:slug}', [CartController::class, 'add'])->name('cart.add');
@@ -82,7 +103,7 @@ Route::get('/zakaz/{order:public_token}', [OrderController::class, 'track'])->na
 
 Route::get('/status', [OrderLookupController::class, 'form'])->name('orders.lookup');
 Route::post('/status', [OrderLookupController::class, 'lookup'])
-    ->middleware('throttle:5,1')
+    ->middleware('throttle:lookup')
     ->name('orders.find');
 Route::get('/moi-zayavki', [OrderLookupController::class, 'mine'])->name('orders.mine');
 Route::post('/moi-zayavki/vyhod', [OrderLookupController::class, 'logout'])->name('orders.logout');
@@ -98,12 +119,12 @@ Route::post('/moi-zayavki/vyhod', [OrderLookupController::class, 'logout'])->nam
 Route::middleware('guest')->group(function () {
     Route::get('/registraciya', [CustomerAccountController::class, 'registerForm'])->name('account.register');
     Route::post('/registraciya', [CustomerAccountController::class, 'register'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:auth')
         ->name('account.register.store');
 
     Route::get('/vhod', [CustomerAccountController::class, 'loginForm'])->name('account.login');
     Route::post('/vhod', [CustomerAccountController::class, 'login'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:auth')
         ->name('account.login.store');
 });
 
@@ -115,11 +136,15 @@ Route::middleware(['auth', OnlyCustomers::class])->group(function () {
     Route::get('/kabinet', [CustomerCabinetController::class, 'orders'])->name('account.orders');
     Route::get('/kabinet/profil', [CustomerCabinetController::class, 'profile'])->name('account.profile');
     Route::post('/kabinet/profil', [CustomerCabinetController::class, 'updateProfile'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:orders')
         ->name('account.profile.update');
     Route::get('/kabinet/privyazat', [CustomerCabinetController::class, 'claimForm'])->name('account.claim');
+    Route::post('/kabinet/zakaz/{token}/otmena', [CustomerCabinetController::class, 'cancel'])
+        ->middleware('throttle:orders')->name('account.order.cancel');
+    Route::post('/kabinet/zakaz/{token}/snova', [CustomerCabinetController::class, 'reorder'])
+        ->middleware('throttle:orders')->name('account.order.reorder');
     Route::post('/kabinet/privyazat', [CustomerCabinetController::class, 'claim'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:auth')
         ->name('account.claim.store');
 });
 
@@ -128,12 +153,17 @@ Route::middleware(['auth', OnlyCustomers::class])->group(function () {
  * розницы и «на проверке»), приём спецификации — только одобренным.
  */
 Route::middleware(['auth', OnlyCustomers::class])->group(function () {
+    Route::get('/kabinet/pamyat-pomoshchnika', function () {
+        abort_unless(auth()->user()->customer_id !== null, 403);
+
+        return view('account.assistant-memory');
+    })->name('account.assistant-memory');
     Route::get('/opt', [WholesaleController::class, 'index'])->name('wholesale.index');
 });
 
 Route::middleware(['auth', OnlyCustomers::class, OnlyWholesale::class])->group(function () {
     Route::post('/opt/zayavka', [WholesaleController::class, 'store'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:orders')
         ->name('wholesale.store');
 });
 

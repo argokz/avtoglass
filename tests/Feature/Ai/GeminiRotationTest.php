@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Ai;
 
+use App\Ai\AiProviderException;
+use App\Ai\AiRequestBudget;
 use App\Ai\Gemini\GeminiClient;
 use App\Ai\Gemini\GeminiRotator;
 use App\Ai\Gemini\GeminiUnavailableException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -21,12 +24,35 @@ class GeminiRotationTest extends TestCase
 
     private function клиент(array $keys = ['k1', 'k2'], array $models = ['m1', 'm2']): GeminiClient
     {
+        // Transport rotation is independent of the runtime's two-attempt budget.
+        config(['ai.max_attempts' => 4]);
+
         return new GeminiClient(new GeminiRotator($keys, $models, 60), 'https://generativelanguage.googleapis.com/v1beta/models');
     }
 
     private function содержание(): array
     {
         return [['role' => 'user', 'parts' => [['text' => 'привет']]]];
+    }
+
+    public function test_timeouts_temporarily_skip_slow_candidates_in_the_next_request(): void
+    {
+        Http::fake(function (Request $request) {
+            if (! str_contains($request->url(), '/fast:generateContent')) {
+                throw new ConnectionException('synthetic timeout');
+            }
+
+            return Http::response(['candidates' => [['content' => ['parts' => [['text' => 'ok']]]]]]);
+        });
+        $client = $this->клиент(['k1'], ['slow-a', 'slow-b', 'fast']);
+        try {
+            $client->generate($this->содержание(), null, [], new AiRequestBudget(20, 2));
+            $this->fail('Two physical attempts');
+        } catch (AiProviderException) {
+            $this->assertTrue(true);
+        }
+        $this->assertSame('ok', $client->generate($this->содержание(), null, [], new AiRequestBudget(20, 2))[0]['text']);
+        $this->assertSame(['fast'], array_column((new GeminiRotator(['k1'], ['slow-a', 'slow-b', 'fast'], 60))->candidates(), 'model'), 'Timeout cooldown must let the next request reach a healthy candidate.');
     }
 
     public function test_лимит_модели_переключает_на_следующую(): void
@@ -62,7 +88,7 @@ class GeminiRotationTest extends TestCase
 
     public function test_лимит_первого_ключа_переключает_на_второй(): void
     {
-        Http::fake(fn (Request $request) => str_contains($request->url(), 'key=k1')
+        Http::fake(fn (Request $request) => $request->hasHeader('x-goog-api-key', 'k1')
             ? Http::response(['error' => ['status' => 'RESOURCE_EXHAUSTED']], 429)
             : Http::response(['candidates' => [['content' => ['parts' => [['text' => 'ok-k2']]]]]]));
 
@@ -98,14 +124,14 @@ class GeminiRotationTest extends TestCase
 
     public function test_список_моделей_переопределяется_из_crm(): void
     {
-        settings()->save(['ai_models' => "gemini-crm-a\ngemini-crm-b"]);
+        settings()->save(['ai_models' => "gemini-test-flash-b\ngemini-test-flash-a"]);
 
         Http::fake(fn () => Http::response(['candidates' => [['content' => ['parts' => [['text' => 'ok']]]]]]));
 
-        config(['ai.keys' => ['k1']]);
+        config(['ai.keys' => ['k1'], 'ai.models' => ['gemini-test-flash-a', 'gemini-test-flash-b'], 'ai.approved_gemini_models' => ['gemini-test-flash-a', 'gemini-test-flash-b']]);
         app(GeminiClient::class)->generate($this->содержание());
 
-        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/gemini-crm-a:generateContent'));
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/gemini-test-flash-b:generateContent'));
     }
 
     public function test_ошибка_не_лимита_не_крутит_круг(): void

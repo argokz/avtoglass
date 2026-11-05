@@ -3,10 +3,12 @@
 namespace App\Filament\Resources\Products\Tables;
 
 use App\Enums\GlassType;
+use App\Filament\Resources\Products\ProductResource;
 use App\Models\Product;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Actions\ReplicateAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -132,7 +134,31 @@ class ProductsTable
                     ),
             ])
             ->defaultSort('views', 'desc')
-            ->recordActions([EditAction::make()])
+            ->recordActions([
+                EditAction::make(),
+                /*
+                 * Новое стекло чаще всего — вариант уже заведённого: та же
+                 * машина, другая комплектация или сторона. Копируем карточку
+                 * и применимость, но не коды и не фото — они у копии свои,
+                 * и угадывать их нельзя. Копия не видна покупателю до проверки.
+                 */
+                ReplicateAction::make()
+                    ->label('Создать по образцу')
+                    ->icon('heroicon-o-document-duplicate')
+                    ->excludeAttributes(['slug', 'signature', 'eurocode', 'oem_code', 'internal_code', 'image_path', 'views', 'offers_count', 'price_min', 'price_max', 'in_stock'])
+                    ->beforeReplicaSaved(fn (Product $replica) => $replica->fill([
+                        'name' => $replica->name.' (копия)',
+                        'is_published' => false,
+                        'needs_review' => true,
+                    ]))
+                    ->after(function (Product $record, Product $replica): void {
+                        foreach ($record->fitments as $fitment) {
+                            $replica->fitments()->create($fitment->only(['car_model_id', 'car_generation_id', 'year_from', 'year_to', 'body_type', 'doors', 'note']));
+                        }
+                    })
+                    ->successRedirectUrl(fn (Product $replica) => ProductResource::getUrl('edit', ['record' => $replica]))
+                    ->successNotificationTitle('Копия создана — укажите еврокод и проверьте отличия'),
+            ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     BulkAction::make('publish')

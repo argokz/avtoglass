@@ -76,6 +76,21 @@ class ProductForm
                     TextInput::make('internal_code')->label('Внутренний артикул'),
                     TextInput::make('width_mm')->label('Ширина, мм')->numeric(),
                     TextInput::make('height_mm')->label('Высота, мм')->numeric(),
+                    Select::make('origin_country')
+                        ->label('Страна производства')
+                        ->options([
+                            'KZ' => 'Казахстан',
+                            'RU' => 'Россия',
+                            'CN' => 'Китай',
+                            'JP' => 'Япония',
+                            'PL' => 'Польша',
+                            'GB' => 'Великобритания',
+                            'KR' => 'Корея',
+                            'DE' => 'Германия',
+                            'TR' => 'Турция',
+                        ])
+                        ->helperText('KZ даёт бейдж «Сделано в Казахстане» и приоритет в выдаче'),
+
                     Select::make('tint')
                         ->label('Тонировка')
                         ->options([

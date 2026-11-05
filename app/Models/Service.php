@@ -4,8 +4,10 @@ namespace App\Models;
 
 use App\Enums\GlassType;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Once;
 
 /**
  * Работа: установка, калибровка, снятие-постановка.
@@ -27,6 +29,13 @@ class Service extends Model
         'sort' => 500,
     ];
 
+    protected static function booted(): void
+    {
+        $flush = static fn () => Once::flush();
+        static::saved($flush);
+        static::deleted($flush);
+    }
+
     protected function casts(): array
     {
         return [
@@ -40,6 +49,23 @@ class Service extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Все активные работы одним запросом на HTTP-запрос.
+     *
+     * В корзине и карточке товара прайс работ спрашивают по несколько раз
+     * подряд (для разных способов получения и калибровки).
+     *
+     * @return Collection<int, self>
+     */
+    public static function activeCatalog(): Collection
+    {
+        return once(fn () => static::query()
+            ->active()
+            ->orderBy('sort')
+            ->orderBy('price')
+            ->get());
     }
 
     /**
@@ -91,11 +117,14 @@ class Service extends Model
      */
     public static function defaultFor(?GlassType $type): ?self
     {
-        return static::query()
-            ->forGlass($type)
-            ->where('is_default', true)
+        return static::activeCatalog()
+            ->filter(fn (self $s) => $s->is_default && ($s->glass_type === null || ($type !== null && $s->glass_type === $type)))
             // Точное совпадение по типу важнее общей работы «на любое стекло»
-            ->orderByRaw('glass_type IS NULL')
+            ->sortBy(fn (self $s) => [
+                $s->glass_type === null ? 1 : 0,
+                (int) $s->sort,
+                (float) $s->price,
+            ])
             ->first();
     }
 
@@ -112,9 +141,14 @@ class Service extends Model
     /** Выезд мастера — отдельная работа, не установка. */
     public static function visitFee(): ?self
     {
-        return static::query()
-            ->active()
-            ->where('slug', 'vyezd-mastera')
-            ->first();
+        return static::activeCatalog()
+            ->first(fn (self $s) => $s->slug === 'vyezd-mastera');
+    }
+
+    /** Калибровка камеры ADAS после замены лобового стекла. */
+    public static function calibration(): ?self
+    {
+        return static::activeCatalog()
+            ->first(fn (self $s) => $s->slug === 'kalibrovka-adas');
     }
 }

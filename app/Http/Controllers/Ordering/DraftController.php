@@ -64,7 +64,7 @@ final class DraftController
         $data = Validator::make($payload, [
             'quote_id' => ['required', 'uuid'],
             'expected_version' => ['required', InputType::integer(), 'integer', 'between:1,2147483647'],
-            'action' => ['required', 'string', Rule::in(['confirm_retail', 'submit_for_review'])],
+            'action' => ['required', 'string', Rule::in(['confirm_retail', 'confirm_wholesale', 'submit_for_review'])],
         ])->validate();
 
         return $this->responses->success($request, $this->commands->submitDraft(

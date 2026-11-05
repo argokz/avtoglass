@@ -43,11 +43,21 @@
     <input type="hidden" name="form_token" value="{{ (string) Illuminate\Support\Str::uuid() }}">
 
     @if ($errors->any())
-        <div class="rounded-2xl border border-warn/40 bg-warn-soft p-3.5 text-sm text-warn-ink">
+        <div tabindex="-1" role="alert" data-order-errors class="rounded-2xl border border-warn/40 bg-warn-soft p-3.5 text-sm text-warn-ink">
             <p class="font-bold">Заявку не отправили — проверьте поля ниже</p>
+            {{-- Каждая ошибка ведёт к своему полю: на телефоне до него иначе листать (GOV.UK, error summary). --}}
+            @php $поля = ['name' => "of-name-{$id}", 'phone' => "of-phone-{$id}", 'comment' => "of-comment-{$id}", 'car_info' => "of-car-{$id}"]; @endphp
             <ul class="mt-1.5 list-disc pl-4">
-                @foreach ($errors->all() as $message)
-                    <li>{{ $message }}</li>
+                @foreach ($errors->getMessages() as $поле => $messages)
+                    @foreach ($messages as $message)
+                        <li>
+                            @isset($поля[$поле])
+                                <a href="#{{ $поля[$поле] }}" class="font-semibold underline underline-offset-2">{{ $message }}</a>
+                            @else
+                                {{ $message }}
+                            @endisset
+                        </li>
+                    @endforeach
                 @endforeach
             </ul>
         </div>

@@ -41,6 +41,9 @@ class StoreOrderRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             OrderContactRules::assertPhone($validator, $this->input('phone'));
+            if ($this->input('payment_method') === 'invoice' && ! (текущийПокупатель()?->seesWholesalePrices() ?? false)) {
+                $validator->errors()->add('payment_method', 'Счёт на организацию доступен одобренным оптовикам.');
+            }
         });
     }
 }

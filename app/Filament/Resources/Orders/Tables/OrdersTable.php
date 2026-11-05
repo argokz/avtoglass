@@ -4,13 +4,20 @@ namespace App\Filament\Resources\Orders\Tables;
 
 use App\Actions\AcceptCashPayment;
 use App\Actions\RefundPayment;
+use App\Domain\Ordering\InvoicePayments;
+use App\Domain\Ordering\Models\OrderDraft;
+use App\Domain\Ordering\OrderProposalService;
+use App\Domain\Risk\RiskLevel;
+use App\Domain\Shared\PurchaseException;
 use App\Enums\AssignmentType;
 use App\Enums\DocumentType;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
+use App\Filament\Resources\Orders\Schemas\ProposalForm;
 use App\Logistics\Scheduler;
+use App\Models\Offer;
 use App\Models\Order;
 use App\Models\ServicePoint;
 use App\Models\User;
@@ -18,9 +25,12 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -29,6 +39,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 /**
  * Список заявок — то, что менеджер держит открытым весь день.
@@ -74,6 +85,14 @@ class OrdersTable
                     ->formatStateUsing(fn (OrderStatus $state) => $state->label())
                     ->color(fn (OrderStatus $state) => $state->color()),
 
+                TextColumn::make('risk_status')
+                    ->label('Риск')
+                    ->badge()
+                    ->formatStateUsing(fn (RiskLevel $state) => $state->label())
+                    ->color(fn (RiskLevel $state) => $state->color())
+                    ->tooltip(fn (Order $r) => $r->risk_reasons ? implode(', ', $r->risk_reasons) : null)
+                    ->toggleable(),
+
                 TextColumn::make('items_count')
                     ->label('Позиций')
                     ->badge()
@@ -111,6 +130,14 @@ class OrdersTable
                     ->label('Источник')
                     ->options(OrderSource::options()),
 
+                // Очередь антифрод-проверки: помеченные и заблокированные заявки.
+                SelectFilter::make('risk_status')
+                    ->label('Риск')
+                    ->options([
+                        RiskLevel::Review->value => 'На проверке',
+                        RiskLevel::Block->value => 'Заблокированные',
+                    ]),
+
                 SelectFilter::make('manager_id')
                     ->label('Менеджер')
                     ->relationship('manager', 'name')
@@ -127,6 +154,49 @@ class OrdersTable
             // новую заявку сам, без перезагрузки страницы.
             ->poll('30s')
             ->recordActions([
+                Action::make('proposal')
+                    ->label('Предложение клиенту')
+                    ->visible(fn (Order $record) => $record->purchase_state === 'review_required')
+                    ->schema(fn (Order $record) => [
+                        Repeater::make('items')->label('Позиции предложения')
+                            ->default(fn (Order $record) => OrderDraft::query()->with('items')->find($record->purchase_draft_id)?->items->map(fn ($item) => [
+                                'line_id' => (string) Str::uuid(), 'offer_id' => $item->offer_id, 'reference' => $item->reference,
+                                'quantity' => $item->quantity, 'selection_mode' => $item->selection_mode, 'article_confirmed' => $item->article_confirmed,
+                                'manufacturer_confirmed' => $item->manufacturer_confirmed,
+                            ])->all() ?? [])
+                            ->schema([
+                                Hidden::make('line_id')->default(fn () => (string) Str::uuid()),
+                                Select::make('offer_id')->label('Предложение каталога')->searchable()
+                                    ->getSearchResultsUsing(fn (string $search) => Offer::query()->with('supplier')->where('is_active', true)->where('article', 'ilike', '%'.$search.'%')->limit(50)->get()->mapWithKeys(fn ($offer) => [$offer->id => $offer->article.' · '.$offer->supplier?->name]))
+                                    ->getOptionLabelUsing(fn ($value) => Offer::query()->find($value)?->article),
+                                TextInput::make('reference')->label('Код / описание')->maxLength(128),
+                                TextInput::make('quantity')->label('Количество')->integer()->required()->minValue(1)->maxValue(99),
+                                Select::make('selection_mode')->label('Основание выбора')->options(['vehicle_fitment' => 'Проверенная применимость', 'exact_article' => 'Подтверждённый клиентом артикул'])->required(),
+                                Toggle::make('article_confirmed')->label('Клиент подтвердил артикул'),
+                                Toggle::make('manufacturer_confirmed')->label('Клиент подтвердил производителя'),
+                            ])->minItems(1)->maxItems(500),
+                        ...ProposalForm::receiving($record),
+                    ])
+                    ->action(function (Order $record, array $data) {
+                        try {
+                            app(OrderProposalService::class)->propose($record, Auth::user(), ProposalForm::changes($data));
+                            Notification::make()->title('Предложение подготовлено для принятия клиентом')->success()->send();
+                        } catch (PurchaseException $e) {
+                            Notification::make()->title('Нужно проверить условия: '.implode(', ', $e->details['reasons'] ?? [$e->errorCode]))->warning()->send();
+                        }
+                    }),
+                Action::make('invoicePaid')->label('Подтвердить перевод по счёту')
+                    ->visible(fn (Order $record) => $record->payment_method?->value === 'invoice' && in_array($record->purchase_state, ['confirmed', 'reservation_expired'], true) && ! $record->isPaid())
+                    ->schema([TextInput::make('reference')->label('Номер банковской операции')->required()->maxLength(100)])
+                    ->action(function (Order $record, array $data) {
+                        try {
+                            app(InvoicePayments::class)->confirm($record, Auth::user(), $data['reference']);
+                            Notification::make()->title('Поступление подтверждено')->success()->send();
+                        } catch (PurchaseException $exception) {
+                            Notification::make()->title($exception->errorCode === 'PAYMENT_REFERENCE_ALREADY_USED'
+                                ? 'Эта банковская операция уже учтена в другом заказе' : 'Проверьте статус заказа и поступление')->warning()->send();
+                        }
+                    }),
                 Action::make('take')
                     ->label('Взять себе')
                     ->icon('heroicon-o-hand-raised')

@@ -11,8 +11,9 @@
 
 @section('content')
 
-<div class="mx-auto max-w-lg py-6">
-    <div class="flex items-start justify-between gap-4">
+<div class="account-workspace mx-auto max-w-2xl py-6">
+    <a href="{{ route('account.assistant-memory') }}" class="btn mb-4">{{ app()->getLocale() === 'kk' ? 'Көмекші жады' : 'Память помощника' }}</a>
+    <div class="page-heading flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <h1 class="text-2xl font-extrabold sm:text-3xl">Профиль</h1>
             <p class="mt-1 text-sm text-muted">

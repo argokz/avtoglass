@@ -18,6 +18,14 @@ use Illuminate\Support\Facades\DB;
 /** Prices and eligibility only. This operation never books a resource. */
 final class QuoteFulfillment
 {
+    public function slotIssues(array $selection, ServicePoint $point, int $duration, CarbonImmutable $at): QuoteIssues
+    {
+        $issues = new QuoteIssues;
+        $this->slot($selection, $point, $duration, $issues, $at);
+
+        return $issues;
+    }
+
     public function calculate(OrderDraft $draft, Collection $offers, array $goods, QuoteIssues $issues, CarbonImmutable $at): array
     {
         $selection = $draft->fulfillment;
@@ -57,6 +65,17 @@ final class QuoteFulfillment
         }
         if ($type === 'delivery') {
             $zone = config('ordering.fulfillment.delivery_zones.'.self::cityKey($city));
+            $policies = settings()->get('delivery_policies', []);
+            $matches = array_values(array_filter(is_array($policies) ? $policies : [], fn ($policy) => is_array($policy) && self::cityKey((string) ($policy['city'] ?? '')) === self::cityKey($city)));
+            if ($matches !== []) {
+                $policy = $matches[0];
+                $zone = null;
+                if (count($matches) === 1 && ($policy['verified'] ?? false) === true && filled($policy['source'] ?? null)
+                    && preg_match('/^\d{1,9}([.,]\d{1,2})?$/D', (string) ($policy['fee'] ?? '')) && is_array($policy['supplier_ids'] ?? null)) {
+                    $zone = ['fee_minor' => Money::fromDecimal(str_replace(',', '.', (string) $policy['fee']))->amountMinor,
+                        'supplier_ids' => array_map('intval', $policy['supplier_ids']), 'source' => $policy['source']];
+                }
+            }
             $source['delivery_zone'] = $zone;
             $fee = is_array($zone) ? ($zone['fee_minor'] ?? null) : null;
             $suppliers = is_array($zone) ? ($zone['supplier_ids'] ?? []) : [];

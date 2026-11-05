@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Domain\Pricing\Money;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\ReceiptStatus;
@@ -33,6 +34,7 @@ class ApplyPaymentCallback
     public function handle(Payment $payment, CallbackResult $result): bool
     {
         return DB::transaction(function () use ($payment, $result) {
+            $lockedOrder = \App\Models\Order::query()->whereKey($payment->order_id)->lockForUpdate()->first();
             // Читаем заново под блокировкой: значения, с которыми пришли,
             // могли устареть между HTTP-запросом и этой строкой.
             $payment = Payment::query()
@@ -44,7 +46,13 @@ class ApplyPaymentCallback
                 return false;   // уже применяли
             }
 
-            if (abs((float) $payment->amount - $result->amount) > 0.01) {
+            // The legacy gateway DTO uses float; validate its boundary in minor units.
+            // Even a one-tiyn mismatch must never confirm the payment.
+            $receivedMinor = $result->amount * 100;
+            $expectedMinor = Money::fromDecimal($payment->amount)->amountMinor;
+            if (! is_finite($receivedMinor)
+                || abs($receivedMinor - round($receivedMinor)) > 0.000001
+                || round($receivedMinor) !== (float) $expectedMinor) {
                 $payment->update([
                     'status' => PaymentStatus::Failed,
                     'failure_reason' => 'Сумма в уведомлении не совпала с выставленной',
@@ -71,7 +79,7 @@ class ApplyPaymentCallback
                 'paid_at' => $result->status->isPaid() ? now() : null,
             ]);
 
-            $order = $payment->order;
+            $order = $lockedOrder ?? $payment->order;
 
             if ($result->status->isPaid()) {
                 Interaction::system(
@@ -81,9 +89,11 @@ class ApplyPaymentCallback
 
                 // Оплаченный заказ подтверждён по определению — клиент уже
                 // проголосовал деньгами, ждать подтверждения менеджера незачем.
-                if ($order->status === OrderStatus::New || $order->status === OrderStatus::InProgress) {
+                if (! $order->purchase_draft_id && ($order->status === OrderStatus::New || $order->status === OrderStatus::InProgress)) {
                     $order->transitionTo(OrderStatus::Confirmed);
                 }
+
+                app(\App\Domain\Ordering\PurchaseLifecycle::class)->paid($order);
 
                 $this->scheduleReceipt($payment);
             } else {

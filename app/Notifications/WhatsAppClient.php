@@ -2,32 +2,47 @@
 
 namespace App\Notifications;
 
+use App\Models\Customer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Сигнал о заявке в WhatsApp смены.
+ * Исходящий WhatsApp через Green-API.
  *
+ * send() — сигнал о заявке в чат смены. sendTo() — сообщение клиенту, и
+ * только такое, которое он сам включил (напоминание о регулярной заявке).
  * Клиентский wa.me на странице «спасибо» — отдельная история: там человек
- * сам жмёт «отправить». Здесь — исходящее сообщение в чат менеджера,
- * если настроен Green-API. Без инстанса никуда не ходим: на dev это
- * был бы шум, а заявка и так уже принята.
+ * сам жмёт «отправить». Без инстанса никуда не ходим: на dev это был бы
+ * шум, а заявка и так уже принята.
  */
 class WhatsAppClient
 {
     public function configured(): bool
     {
+        return $this->canSend() && filled($this->chatId());
+    }
+
+    /** Инстанс есть — можно писать клиентам, даже если чат смены не задан. */
+    public function canSend(): bool
+    {
         return filled(config('notifications.whatsapp.green_instance'))
-            && filled(config('notifications.whatsapp.green_token'))
-            && filled($this->chatId());
+            && filled(config('notifications.whatsapp.green_token'));
     }
 
     public function send(string $text): bool
     {
-        if (! $this->configured()) {
-            return false;
-        }
+        return $this->configured() && $this->post($this->chatId(), $text);
+    }
 
+    public function sendTo(?string $phone, string $text): bool
+    {
+        $digits = Customer::normalizePhone($phone);
+
+        return $this->canSend() && $digits !== null && $this->post($digits.'@c.us', $text);
+    }
+
+    private function post(string $chatId, string $text): bool
+    {
         $instance = config('notifications.whatsapp.green_instance');
         $token = config('notifications.whatsapp.green_token');
         $url = "https://api.green-api.com/waInstance{$instance}/sendMessage/{$token}";
@@ -35,7 +50,7 @@ class WhatsAppClient
         try {
             $response = Http::timeout((int) config('notifications.whatsapp.timeout', 8))
                 ->post($url, [
-                    'chatId' => $this->chatId(),
+                    'chatId' => $chatId,
                     'message' => $text,
                 ]);
         } catch (\Throwable $e) {

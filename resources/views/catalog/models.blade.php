@@ -45,7 +45,7 @@
             <a href="{{ route('catalog.products', array_filter(['brand' => $brand, 'model' => $model, 'type' => $glassType?->value])) }}"
                class="card card-hover group relative flex flex-1 flex-col overflow-hidden p-3 sm:p-4">
 
-                <x-car-model-image :model="$model" :brand="$brand" class="mb-3" />
+                <x-car-model-image :model="$model" :brand="$brand" class="mb-3 h-32 w-full" />
 
                 <div class="mt-auto flex items-baseline justify-between gap-2 pt-1">
                     <span class="truncate font-display text-sm font-extrabold text-ink transition group-hover:text-brand-ink sm:text-base">

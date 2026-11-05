@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', 'Документ')</title>
     <style>
         /*
@@ -73,6 +74,25 @@
         .toolbar button, .toolbar a {
             font: inherit; padding: 7px 14px; border: 1px solid #999; border-radius: 6px;
             background: #fff; cursor: pointer; text-decoration: none; color: #000;
+        }
+
+        @media screen and (max-width: 840px) {
+            .sheet, .toolbar { width: calc(100% - 24px); }
+            .sheet { min-height: 0; padding: 20px 16px; }
+            .head { flex-direction: column; gap: 12px; }
+            .head > .right { text-align: left; }
+            .toolbar { justify-content: flex-start; flex-wrap: wrap; }
+            .toolbar button, .toolbar a { min-height: 44px; display: inline-flex; align-items: center; }
+            table { table-layout: fixed; }
+            th, td { overflow-wrap: anywhere; }
+            .line-items th { font-size: 10px; }
+            .line-items td { font-size: 11px; }
+            .line-items th, .line-items td { padding: 5px 3px; }
+            .line-items th:first-child { width: 20px !important; }
+            .line-items th:nth-child(3) { width: 36px !important; }
+            .line-items th:nth-child(4), .line-items th:nth-child(5) { width: 64px !important; }
+            .totals td:nth-child(2) { width: 60% !important; }
+            .sign { gap: 20px; }
         }
 
         @media print {

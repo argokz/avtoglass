@@ -6,6 +6,7 @@ use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
+use App\Models\Customer;
 use App\Models\Order;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Repeater;
@@ -27,6 +28,7 @@ class OrderForm
 
                     Select::make('status')
                         ->label('Статус')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->options(OrderStatus::options())
                         ->required(),
 
@@ -44,24 +46,29 @@ class OrderForm
 
                     Select::make('fulfillment')
                         ->label('Что нужно клиенту')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->options(FulfillmentType::options())
                         ->live(),
 
                     Select::make('payment_method')
                         ->label('Оплата')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->options(PaymentMethod::options()),
 
                     DateTimePicker::make('scheduled_at')
                         ->label('Назначено на')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->seconds(false)
                         ->helperText('Время доставки или замены'),
 
                     TextInput::make('city')
                         ->label('Город')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->maxLength(64),
 
                     TextInput::make('address')
                         ->label('Адрес')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->columnSpanFull()
                         ->visible(fn (callable $get) => in_array($get('fulfillment'), [
                             FulfillmentType::Delivery->value,
@@ -74,8 +81,12 @@ class OrderForm
                 ->schema([
                     Select::make('customer_id')
                         ->label('Клиент')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->relationship('customer', 'name')
-                        ->searchable(['name', 'phone'])
+                        // Телефон зашифрован: поиск по нему идёт через слепой индекс.
+                        ->getSearchResultsUsing(fn (string $search): array => Customer::searchForSelect($search))
+                        ->getOptionLabelUsing(fn ($value): ?string => Customer::find($value)?->name)
+                        ->searchable()
                         ->preload()
                         ->required(),
                 ]),
@@ -84,6 +95,7 @@ class OrderForm
                 ->description('Цены — снимок на момент заказа: пересборка каталога их не изменит')
                 ->schema([
                     Repeater::make('items')
+                        ->disabled(fn (?Order $record) => filled($record?->purchase_draft_id))
                         ->hiddenLabel()
                         ->relationship()
                         ->columns(4)

@@ -15,6 +15,7 @@ use App\Models\Offer;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class SearchOffersTest extends TestCase
@@ -122,7 +123,7 @@ class SearchOffersTest extends TestCase
         $ok = app(SearchOffers::class)->search(BuyerContext::guest(str_repeat('a', 64)), ['q' => 'PAGE-1', 'per_page' => 100]);
         $this->assertSame(100, $ok['meta']['per_page']);
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         app(SearchOffers::class)->search(BuyerContext::guest(str_repeat('a', 64)), ['q' => 'PAGE-1', 'per_page' => 101]);
     }
 
@@ -188,5 +189,51 @@ class SearchOffersTest extends TestCase
         $this->assertNotEmpty($plan);
         // Small fixtures may Seq Scan; the expression must still match SearchOffers normalisation.
         $this->assertStringContainsString('regexp_replace', strtolower($sql));
+    }
+
+    public function test_verified_fitment_ranks_before_pagination_and_returns_resolved_vehicle(): void
+    {
+        config(['ordering.fitment.required_options.windshield' => ['camera']]);
+        $model = CarModel::factory()->create(['needs_review' => false]);
+        $uncertain = Product::factory()->create(['camera' => true]);
+        $matched = Product::factory()->create(['camera' => false]);
+        foreach ([$uncertain, $matched] as $product) {
+            Fitment::factory()->create([
+                'product_id' => $product->id, 'car_model_id' => $model->id,
+                'year_from' => 2018, 'is_verified' => true,
+            ]);
+            Offer::factory()->create(['product_id' => $product->id, 'stock_qty' => 5, 'price_retail' => '100.00']);
+        }
+
+        $result = app(SearchOffers::class)->search(BuyerContext::guest(str_repeat('a', 64)), [
+            'car_model_id' => $model->id, 'year' => 2018, 'options' => ['camera' => 'false'], 'per_page' => 1,
+        ]);
+
+        $this->assertSame(2, $result['meta']['total']);
+        $this->assertSame($matched->id, $result['items'][0]['product_id']);
+        $this->assertSame('matched', $result['items'][0]['fitment']['status']);
+        $this->assertSame($model->id, $result['vehicle']['car_model_id']);
+        $this->assertFalse($result['vehicle']['options']['camera']);
+    }
+
+    public function test_available_offer_ranks_before_pagination(): void
+    {
+        Offer::factory()->create(['stock_qty' => 0, 'price_retail' => '100.00']);
+        $available = Offer::factory()->create(['stock_qty' => 5, 'price_retail' => '100.00']);
+        $result = app(SearchOffers::class)->search(BuyerContext::guest(str_repeat('a', 64)), ['per_page' => 1]);
+        $this->assertSame($available->id, $result['items'][0]['offer_id']);
+        $this->assertTrue($result['meta']['has_more']);
+    }
+
+    public function test_unknown_and_invalid_options_are_rejected_before_querying(): void
+    {
+        foreach ([['unknown' => true], ['camera' => 'maybe'], ['camera' => ''], ['camera' => []]] as $options) {
+            try {
+                app(SearchOffers::class)->search(BuyerContext::guest(str_repeat('a', 64)), ['options' => $options]);
+                $this->fail('Invalid option should be rejected.');
+            } catch (ValidationException $exception) {
+                $this->assertNotEmpty($exception->errors());
+            }
+        }
     }
 }

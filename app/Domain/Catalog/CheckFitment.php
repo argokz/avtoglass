@@ -8,12 +8,62 @@ use App\Domain\Ordering\Models\OrderDraftItem;
 use App\Models\CarModel;
 use App\Models\Offer;
 use App\Models\Product;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use LogicException;
 
 /** Deterministic rule over loaded facts. No fuzzy name, image or VIN inference. */
 final class CheckFitment
 {
+    /**
+     * SQL counterpart used only to rank search BEFORE pagination. Final fitment
+     * remains checked by forVehicle on the loaded rows and again at checkout.
+     */
+    public function matchingProducts(array $vehicle, ?CarModel $model): Builder
+    {
+        $query = Product::query()->select('products.id');
+        if ($vehicle === [] || ! $model || $model->needs_review || ! isset($vehicle['year'])
+            || (isset($vehicle['brand_id']) && $vehicle['brand_id'] !== (int) $model->car_brand_id)) {
+            return $query->whereRaw('0 = 1');
+        }
+        $options = $vehicle['options'] ?? [];
+        foreach ($options as $flag => $value) {
+            if (! array_key_exists($flag, Product::OPTION_FLAGS)) {
+                return $query->whereRaw('0 = 1');
+            }
+            if ($value !== null) {
+                $query->where($flag, $value);
+            }
+        }
+        $eligibleTypes = [];
+        foreach ((array) config('ordering.fitment.required_options', []) as $type => $required) {
+            if (is_array($required) && ! array_diff($required, array_keys(Product::OPTION_FLAGS))
+                && ! array_filter($required, fn ($flag) => ! isset($options[$flag]))) {
+                $eligibleTypes[] = $type;
+            }
+        }
+        $query->whereIn('glass_type', $eligibleTypes);
+
+        return $query->whereHas('fitments', function (Builder $fit) use ($vehicle, $model) {
+            $fit->where('is_verified', true)->where('car_model_id', $model->id)
+                ->whereNotNull('year_from')->where('year_from', '<=', $vehicle['year'])
+                ->where(fn (Builder $q) => $q->whereNull('year_to')->orWhere('year_to', '>=', $vehicle['year']))
+                ->whereRaw("trim(coalesce(note, '')) = ''")
+                ->where(fn (Builder $q) => $q->whereRaw("trim(coalesce(body_type, '')) = ''")
+                    ->orWhereRaw('lower(trim(body_type)) = ?', [$this->normalized($vehicle['body'] ?? null)]))
+                ->where(fn (Builder $q) => $q->whereRaw("trim(coalesce(doors, '')) = ''")
+                    ->orWhereRaw("? = any(string_to_array(doors, '/'))", [$vehicle['doors'] ?? null]));
+            if (! isset($vehicle['generation_id'])) {
+                $fit->whereNull('car_generation_id');
+            } else {
+                $fit->where('car_generation_id', $vehicle['generation_id'])
+                    ->whereHas('generation', fn (Builder $generation) => $generation->where('car_model_id', $model->id)
+                        ->where(fn (Builder $q) => $q->whereNull('year_from')->orWhere('year_from', '<=', $vehicle['year']))
+                        ->where(fn (Builder $q) => $q->whereNull('year_to')->orWhere('year_to', '>=', $vehicle['year'])));
+            }
+        });
+    }
+
     public function check(Offer $offer, OrderDraftItem $item, array $vehicle, ?CarModel $model, Collection $fitments): array
     {
         $review = fn (string $detail, array $missing = []) => ['status' => 'review_required', 'detail' => $detail, 'missing_options' => $missing];

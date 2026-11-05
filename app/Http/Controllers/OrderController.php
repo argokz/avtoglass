@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Actions\CreateOrder;
 use App\Actions\StartPayment;
+use App\Domain\Ordering\StorefrontCheckout;
 use App\Enums\OrderSource;
+use App\Http\Requests\QuickOrderRequest;
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Order;
 use App\Models\Product;
@@ -21,9 +23,34 @@ class OrderController extends Controller
     {
         abort_unless($product->is_published, 404);
 
+        $order = StorefrontCheckout::enabled()
+            ? app(StorefrontCheckout::class)->forProduct($request->validated(), $product)
+            : $this->createOrder->handle(
+                $request->validated(),
+                OrderSource::ProductPage,
+                $product
+            );
+
+        return app(StartPayment::class)->redirectAfterOrder($order);
+    }
+
+    /**
+     * Экспресс-покупка «в 1 клик»: телефон — и менеджер перезванивает.
+     *
+     * Оплаты и способа получения тут нет специально: человек с разбитым
+     * стеклом не готов решать это в модалке, ему нужен звонок. Всё
+     * остальное уточняет менеджер — задача на перезвон уже стоит.
+     */
+    public function quick(QuickOrderRequest $request, Product $product): RedirectResponse
+    {
+        abort_unless($product->is_published, 404);
+
         $order = $this->createOrder->handle(
-            $request->validated(),
-            OrderSource::ProductPage,
+            $request->validated() + [
+                'name' => 'Покупатель',
+                'comment' => 'Экспресс-покупка: перезвонить, подтвердить наличие и оформить.',
+            ],
+            OrderSource::OneClick,
             $product
         );
 

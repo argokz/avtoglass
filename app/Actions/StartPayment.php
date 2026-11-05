@@ -2,6 +2,8 @@
 
 namespace App\Actions;
 
+use App\Domain\Ordering\PurchaseLifecycle;
+use App\Domain\Pricing\Money;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
@@ -48,10 +50,14 @@ class StartPayment
             // и нажать «оплатить» второй раз — плодить платежи из-за этого не нужно.
             $pending = $locked->payments()->pending()->latest('id')->first();
 
-            if ($pending !== null && $pending->isPayable()
-                && (float) $pending->amount === (float) $locked->total_amount
-                && $pending->provider === $gateway->name()) {
-                return $pending;
+            if ($pending !== null && $pending->isPayable()) {
+                if (Money::fromDecimal($pending->amount)->decimal() === Money::fromDecimal($locked->total_amount)->decimal()
+                    && $pending->currency === ($locked->currency ?: 'KZT') && $pending->provider === $gateway->name()) {
+                    return $pending;
+                }
+
+                // An unresolved bank attempt must not be duplicated through another provider.
+                return null;
             }
 
             return $locked->payments()->create([
@@ -79,13 +85,19 @@ class StartPayment
         return $payment ? $gateway->redirectUrl($payment) : null;
     }
 
-    /** После заявки: карта — сразу в Halyk, иначе страница «спасибо». */
+    /** После заявки: онлайн-способ — сразу в свою кассу, иначе страница «спасибо». */
     public function redirectAfterOrder(Order $order): RedirectResponse
     {
         session(['last_order_number' => $order->number]);
 
-        if ($order->wantsCardPayment()) {
-            $url = $this->begin($order, 'halyk');
+        if ($order->purchase_draft_id) {
+            return redirect()->route('purchase.show', $order->public_token);
+        }
+
+        $driver = $order->payment_method?->driver();
+
+        if ($driver !== null) {
+            $url = $this->begin($order, $driver);
 
             if ($url !== null) {
                 return redirect()->away($url);
@@ -98,6 +110,11 @@ class StartPayment
     /** Платить можно за живой заказ с посчитанной суммой и без уже прошедшей оплаты. */
     public function isPayable(Order $order): bool
     {
+        if ($order->purchase_draft_id && ($order->purchase_state !== 'confirmed'
+            || ($order->risk_status && $order->risk_status->value !== 'allow')
+            || ! app(PurchaseLifecycle::class)->fullyReserved($order))) {
+            return false;
+        }
         if (! settings()->enabled('payments')) {
             return false;
         }

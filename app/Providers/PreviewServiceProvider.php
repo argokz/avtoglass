@@ -27,13 +27,21 @@ class PreviewServiceProvider extends ServiceProvider
         }
 
         Http::preventStrayRequests();
+        if (env('ASSISTANT_JOURNEY_PREVIEW', false)) {
+            config(['ordering.storefront_core' => true, 'ordering.auto_checkout_enabled' => true,
+                'ordering.wholesale_auto_checkout_enabled' => true, 'payments.driver' => 'test', 'payments.verified_drivers' => ['test']]);
+        }
         config(['livewire.temporary_file_upload.rules' => ['required', 'file', 'max:20480']]);
         Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response([
-                'candidates' => [['content' => ['parts' => [[
+            'generativelanguage.googleapis.com/*' => function ($request) {
+                $candidate = ['candidates' => [['finishReason' => 'STOP', 'content' => ['parts' => [[
                     'text' => 'Это демонстрационный диалог. Для подбора уточните модель, год и наличие камеры за стеклом. Данные и заказы этого стенда используются только для проверки интерфейса.',
-                ]]]]],
-            ]),
+                ]]]]]];
+
+                return str_contains($request->url(), ':streamGenerateContent')
+                    ? Http::response('data: '.json_encode($candidate, JSON_UNESCAPED_UNICODE)."\n\n", 200, ['Content-Type' => 'text/event-stream'])
+                    : Http::response($candidate);
+            },
         ]);
     }
 }

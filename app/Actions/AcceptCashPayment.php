@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Domain\Ordering\PurchaseLifecycle;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\ReceiptStatus;
@@ -75,6 +76,7 @@ class AcceptCashPayment
                 $order->transitionTo(OrderStatus::Confirmed);
             }
 
+            app(PurchaseLifecycle::class)->paid($order);
             $this->scheduleReceipt($payment);
 
             return $payment;
@@ -84,6 +86,10 @@ class AcceptCashPayment
     /** Сколько ещё можно принять по этому заказу. */
     public function canAccept(Order $order, float $amount): bool
     {
+        if ($order->purchase_draft_id && ($order->purchase_state !== 'confirmed' || $order->payment_method?->value === 'invoice'
+            || abs($amount - $order->outstanding()) > 0.000001)) {
+            return false;
+        }
         if ($amount <= 0) {
             return false;
         }

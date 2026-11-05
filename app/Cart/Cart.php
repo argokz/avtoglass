@@ -2,11 +2,18 @@
 
 namespace App\Cart;
 
+use App\Domain\Identity\SessionBuyer;
+use App\Domain\Ordering\ActiveDraft;
+use App\Domain\Ordering\DraftService;
+use App\Domain\Ordering\StorefrontCheckout;
 use App\Enums\FulfillmentType;
 use App\Models\Offer;
 use App\Models\Product;
 use Illuminate\Contracts\Session\Session;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Once;
+use Illuminate\Support\Str;
 
 /**
  * Корзина покупателя, живущая в сессии.
@@ -17,6 +24,13 @@ use Illuminate\Support\Collection;
  */
 class Cart
 {
+    private ?int $sharedVersion = null;
+
+    private function shared(): bool
+    {
+        return StorefrontCheckout::enabled() && Schema::hasTable('purchase_workspaces');
+    }
+
     private const KEY = 'cart';
 
     /** Стекло объёмное: заказ на сотню штук у розницы — это ошибка ввода. */
@@ -81,7 +95,14 @@ class Cart
 
     public function clear(): void
     {
+        if ($this->shared()) {
+            $buyer = SessionBuyer::current();
+            if ($draft = app(ActiveDraft::class)->current($buyer)) {
+                app(DraftService::class)->update($buyer, $draft->id, $draft->version, ['items' => []]);
+            }
+        }
         $this->session->forget(self::KEY);
+        Once::flush();
     }
 
     /**
@@ -93,61 +114,63 @@ class Cart
      */
     public function items(): Collection
     {
-        $entries = $this->entries();
+        return once(function (): Collection {
+            $entries = $this->entries();
 
-        if ($entries === []) {
-            return collect();
-        }
+            if ($entries === []) {
+                return collect();
+            }
 
-        $productIds = array_unique(array_column($entries, 'product_id'));
-        $offerIds = array_values(array_filter(array_column($entries, 'offer_id')));
+            $productIds = array_unique(array_column($entries, 'product_id'));
+            $offerIds = array_values(array_filter(array_column($entries, 'offer_id')));
 
-        $products = Product::whereIn('id', $productIds)
-            ->where('is_published', true)
-            ->get()
-            ->keyBy('id');
-
-        $offers = $offerIds === []
-            ? collect()
-            : Offer::whereIn('id', $offerIds)
-                ->where('is_active', true)
-                ->with('supplier')
+            $products = Product::whereIn('id', $productIds)
+                ->where('is_published', true)
                 ->get()
                 ->keyBy('id');
 
-        $alive = [];
+            $offers = $offerIds === []
+                ? collect()
+                : Offer::whereIn('id', $offerIds)
+                    ->where('is_active', true)
+                    ->with('supplier')
+                    ->get()
+                    ->keyBy('id');
 
-        foreach ($entries as $key => $entry) {
-            $product = $products->get($entry['product_id']);
+            $alive = [];
 
-            if ($product === null) {
-                continue;
-            }
+            foreach ($entries as $key => $entry) {
+                $product = $products->get($entry['product_id']);
 
-            $offer = $entry['offer_id'] ? $offers->get($entry['offer_id']) : null;
+                if ($product === null) {
+                    continue;
+                }
 
-            if ($entry['offer_id'] && ($offer === null || $offer->product_id !== $product->id)) {
-                $offer = null;
-            }
-
-            $alive[$key] = [
-                'product_id' => $product->id,
-                'offer_id' => $offer?->id,
-                'qty' => $entry['qty'],
-            ];
-        }
-
-        if ($alive !== $entries) {
-            $this->save($alive);
-        }
-
-        return collect($alive)
-            ->map(function (array $entry) use ($products, $offers) {
                 $offer = $entry['offer_id'] ? $offers->get($entry['offer_id']) : null;
 
-                return new CartItem($products[$entry['product_id']], $entry['qty'], $offer);
-            })
-            ->values();
+                if ($entry['offer_id'] && ($offer === null || $offer->product_id !== $product->id)) {
+                    $offer = null;
+                }
+
+                $alive[$key] = [
+                    'product_id' => $product->id,
+                    'offer_id' => $offer?->id,
+                    'qty' => $entry['qty'],
+                ];
+            }
+
+            if ($alive !== $entries && ! $this->shared()) {
+                $this->save($alive);
+            }
+
+            return collect($alive)
+                ->map(function (array $entry) use ($products, $offers) {
+                    $offer = $entry['offer_id'] ? $offers->get($entry['offer_id']) : null;
+
+                    return new CartItem($products[$entry['product_id']], $entry['qty'], $offer);
+                })
+                ->values();
+        });
     }
 
     public function count(): int
@@ -188,6 +211,24 @@ class Cart
      */
     private function entries(): array
     {
+        if ($this->shared() && ($draft = app(ActiveDraft::class)->current(SessionBuyer::current()))) {
+            $this->sharedVersion = $draft->version;
+            $entries = [];
+            $lines = $draft->jsonSerialize()['items'];
+            $offers = Offer::query()->whereIn('id', array_filter(array_column($lines, 'offer_id')))->get(['id', 'product_id'])->keyBy('id');
+            foreach ($lines as $line) {
+                $offer = $offers->get($line['offer_id']);
+                $productId = $offer?->product_id;
+                if (! $productId && preg_match('/^product:(\d+)$/D', $line['reference'] ?? '', $m)) {
+                    $productId = (int) $m[1];
+                }
+                if ($productId) {
+                    $entries[$this->key($productId, $offer?->id)] = ['product_id' => $productId, 'offer_id' => $offer?->id, 'qty' => $line['quantity']];
+                }
+            }
+
+            return $entries;
+        }
         $raw = (array) $this->session->get(self::KEY, []);
         $entries = [];
 
@@ -231,6 +272,28 @@ class Cart
 
     private function save(array $entries): void
     {
+        Once::flush();
+
+        if ($this->shared()) {
+            $buyer = SessionBuyer::current();
+            $draft = app(ActiveDraft::class)->current($buyer, true);
+            $previous = $draft->jsonSerialize()['items'];
+            $items = [];
+            foreach ($previous as $line) {
+                if ($line['offer_id'] === null && ! str_starts_with($line['reference'] ?? '', 'product:')) {
+                    $items[] = array_intersect_key($line, array_flip(['line_id', 'offer_id', 'reference', 'quantity', 'selection_mode', 'article_confirmed', 'manufacturer_confirmed', 'comment']));
+                }
+            }
+            foreach ($entries as $entry) {
+                $old = collect($previous)->first(fn ($line) => $entry['offer_id'] !== null && $line['offer_id'] === $entry['offer_id']);
+                $items[] = ['line_id' => $old['line_id'] ?? (string) Str::uuid(), 'offer_id' => $entry['offer_id'],
+                    'reference' => $old['reference'] ?? 'product:'.$entry['product_id'], 'quantity' => $entry['qty'],
+                    'selection_mode' => $old['selection_mode'] ?? 'vehicle_fitment', 'article_confirmed' => $old['article_confirmed'] ?? false, 'manufacturer_confirmed' => $old['manufacturer_confirmed'] ?? false];
+            }
+            $result = app(DraftService::class)->update($buyer, $draft->id, $this->sharedVersion ?? $draft->version, ['items' => $items]);
+            $this->sharedVersion = $result->version;
+        }
+
         if ($entries === []) {
             $this->session->forget(self::KEY);
 

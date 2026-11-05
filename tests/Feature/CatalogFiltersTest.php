@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Supplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -326,5 +327,23 @@ class CatalogFiltersTest extends TestCase
         Offer::factory()->price(30000)->create(['product_id' => $product->id]);
 
         $this->filters()->assertSee(route('catalog.product', $product), escape: false);
+    }
+
+    /** Повторный заход с тем же фильтром не пересчитывает чипсы поставщиков и типов. */
+    public function test_повторный_рендер_берёт_фасеты_из_кэша(): void
+    {
+        $product = $this->glass('Лобовое Camry');
+        Offer::factory()->price(20000)->create(['product_id' => $product->id]);
+
+        $this->filters()->assertSee('Лобовое Camry');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->filters()->assertSee('Лобовое Camry');
+        $sql = collect(DB::getQueryLog())->pluck('query')->implode("\n");
+        DB::disableQueryLog();
+
+        $this->assertStringNotContainsString('join "suppliers"', $sql);
+        $this->assertStringNotContainsString('group by "glass_type"', $sql);
     }
 }

@@ -1,4 +1,12 @@
-@props(['class' => ''])
+@props([
+    'product' => null,
+    'class' => '',
+])
+
+@php
+    $eurocode = $product?->eurocode ?: '7260AGNGYVW1B';
+    $oem = $product?->oem_number;
+@endphp
 
 <div class="rounded-card border border-line bg-surface p-6 shadow-sm {{ $class }}">
     <div class="flex items-center gap-3">
@@ -34,10 +42,15 @@
 
                 {{-- Еврокод и точки даты --}}
                 <div class="text-xs font-bold text-amber-300">
-                    7260AGNGYVW1B
+                    {{ $eurocode }}
                 </div>
+                @if($oem)
+                    <div class="mt-0.5 text-[10px] text-slate-400">
+                        OEM {{ $oem }}
+                    </div>
+                @endif
                 <div class="mt-1 text-sm tracking-[0.3em] text-slate-400">
-                    ... 24 ...
+                    ... 26 ...
                 </div>
             </div>
         </div>
@@ -67,9 +80,9 @@
 
             <div class="rounded-xl border border-line bg-sunken p-3">
                 <strong class="flex items-center gap-1.5 font-bold text-amber-600 dark:text-amber-400">
-                    <span>4. Еврокод и дата производства</span>
+                    <span>4. Еврокод ({{ $eurocode }})</span>
                 </strong>
-                <p class="mt-1 text-muted">Международный код (например, 7260AGN) шифрует марку, цвет и опции. Точки и цифра указывают месяц и год выпуска.</p>
+                <p class="mt-1 text-muted">Международный код однозначно задаёт кузов автомобиля, оттенок, полосу и крепление камеры/датчика дождя.</p>
             </div>
         </div>
     </div>

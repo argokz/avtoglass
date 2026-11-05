@@ -9,7 +9,7 @@
     {!! шрифты() !!}
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body>
+<body class="storefront">
     <livewire:preview.purchase-journey />
 </body>
 </html>

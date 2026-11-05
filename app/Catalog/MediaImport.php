@@ -3,6 +3,7 @@
 namespace App\Catalog;
 
 use App\Models\Product;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
@@ -62,6 +63,11 @@ class MediaImport
 
             $images += $this->attachImage($product, $entry['image'] ?? null);
             $fields += $this->fillFields($product, $entry);
+        }
+
+        if (! $dryRun && ($images > 0 || $fields > 0)) {
+            // Снимки и характеристики попали в карточки — витрина перечитывается.
+            app(StorefrontCache::class)->bump();
         }
 
         return [

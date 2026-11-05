@@ -6,6 +6,7 @@ use App\Catalog\CatalogCounters;
 use App\Catalog\FitmentYears;
 use App\Catalog\ModelNormalizer;
 use App\Catalog\NormalizedModel;
+use App\Catalog\PriceRowSignature;
 use App\Catalog\PublishingGuard;
 use App\Catalog\StockLedger;
 use App\Enums\GlassType;
@@ -19,6 +20,7 @@ use App\Models\PriceImportRow;
 use App\Models\PriceImportRun;
 use App\Models\Product;
 use App\Models\Supplier;
+use App\Support\StorefrontCache;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -157,6 +159,9 @@ class BuildCatalog extends Command
 
         $run->update(['status' => 'applied']);
 
+        // Каталог пересобран — витринный кэш обязан перечитаться.
+        app(StorefrontCache::class)->bump();
+
         $this->report($stats, $skipped);
 
         return self::SUCCESS;
@@ -164,8 +169,8 @@ class BuildCatalog extends Command
 
     private function processRow(PriceImportRow $row, array &$stats): void
     {
-        $options = $this->normalizeOptions((array) $row->options);
-        $signature = $this->signature($row, $options);
+        $options = PriceRowSignature::options((array) $row->options);
+        $signature = PriceRowSignature::make($row, $options);
 
         $product = Product::where('signature', $signature)->first();
 
@@ -187,51 +192,6 @@ class BuildCatalog extends Command
         $stats['fitments'] += $this->createFitments($product, $row);
 
         $row->update(['product_id' => $product->id, 'status' => 'applied']);
-    }
-
-    /**
-     * Отпечаток карточки. Годы входят в подпись, потому что стекло для рестайлинга
-     * физически другое, а вот поставщик и цена — нет: на этом и работает склейка.
-     */
-    private function signature(PriceImportRow $row, array $options): string
-    {
-        /*
-         * У расходника без марки все остальные поля пустые, и подпись
-         * получилась бы одна на все семьдесят позиций — они склеились бы
-         * в один товар. Различает их собственное название.
-         */
-        if ($row->brand_name === null && $row->glass_type === GlassType::Consumable->value) {
-            return hash('sha256', 'consumable|'.mb_strtolower(trim((string) $row->raw_name)));
-        }
-
-        $parts = [
-            mb_strtolower(trim((string) $row->brand_name)),
-            mb_strtolower(trim((string) $row->model_name)),
-            $row->glass_type,
-            // сторона обязательна в подписи: левое и правое боковое — разные товары,
-            // склеить их значит отгрузить клиенту не то стекло
-            $row->position,
-            $row->year_from,
-            $row->year_to,
-            $row->body_type,
-            $row->doors,
-            $row->eurocode ? mb_strtolower($row->eurocode) : null,
-            implode(',', array_keys(array_filter($options))),
-        ];
-
-        return hash('sha256', implode('|', $parts));
-    }
-
-    /** Приводим набор опций к полному списку флагов, чтобы подпись была стабильной. */
-    private function normalizeOptions(array $raw): array
-    {
-        $options = [];
-
-        foreach (array_keys(self::OPTION_SHORT) as $flag) {
-            $options[$flag] = (bool) ($raw[$flag] ?? false);
-        }
-
-        return $options;
     }
 
     private function createProduct(PriceImportRow $row, array $options, string $signature): Product
@@ -409,6 +369,10 @@ class BuildCatalog extends Command
                 'stock_qty' => 0,
                 'is_active' => $row->price !== null,
                 'price_updated_at' => now(),
+                // This source contains prices, not stock or verified vehicle compatibility.
+                'price_valid_until' => null,
+                'stock_verified_at' => null,
+                'auto_checkout_enabled' => false,
             ]
         );
     }
@@ -515,11 +479,19 @@ class BuildCatalog extends Command
         return $this->generationIds[$key] = $generation->id;
     }
 
+    /** Под каким slug живёт поставщик этого диалекта прайса — нужно и предпросмотру импорта. */
+    public static function supplierSlug(string $dialect): string
+    {
+        $name = (self::SUPPLIERS[$dialect] ?? self::SUPPLIERS['unknown'])[0];
+
+        return Str::slug($name) ?: (array_key_exists($dialect, self::SUPPLIERS) ? $dialect : 'unknown');
+    }
+
     private function seedSuppliers(): void
     {
         foreach (self::SUPPLIERS as $dialect => [$name, $tier, $markup]) {
             $supplier = Supplier::firstOrCreate(
-                ['slug' => Str::slug($name) ?: $dialect],
+                ['slug' => self::supplierSlug($dialect)],
                 [
                     'name' => $name,
                     'tier' => $tier,

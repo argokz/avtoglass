@@ -1,22 +1,26 @@
-<header class="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur-xl">
-    <div class="mx-auto flex max-w-7xl items-center gap-2 px-4 py-3 sm:gap-4">
-        <a href="{{ route('home') }}" aria-label="{{ settings()->brandName() }} — на главную" class="min-w-0 shrink">
+<header class="storefront-header sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur-xl">
+    <div class="storefront-toolbar mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 sm:gap-4 sm:py-3">
+        <a href="{{ route('home') }}" aria-label="{{ settings()->brandName() }} — на главную" class="storefront-brand-link min-w-0 shrink">
             <x-logo />
         </a>
 
         @unless ($чатГлавная)
             <form action="{{ route('search') }}" method="get" class="hidden min-w-0 flex-1 lg:block" role="search">
                 <label class="sr-only" for="header-search">Марка, модель или еврокод</label>
-                <div class="relative">
+                <div class="relative" data-suggest-root>
                     <input id="header-search" type="search" name="q" value="{{ request('q') }}"
-                           placeholder="Марка, модель или еврокод" class="input !rounded-pill !bg-sunken !pr-24">
+                           placeholder="Марка, модель или еврокод" class="input !rounded-pill !bg-sunken !pr-24"
+                           autocomplete="off" data-suggest="{{ route('api.suggest') }}"
+                           role="combobox" aria-expanded="false" aria-controls="header-search-suggest">
                     <button type="submit" class="btn btn-primary btn-sm absolute top-1 right-1 min-h-11">Найти</button>
+                    <div id="header-search-suggest" role="listbox" data-suggest-box
+                         class="absolute inset-x-0 top-full z-50 mt-2 hidden overflow-hidden rounded-card border border-line bg-surface shadow-lift"></div>
                 </div>
             </form>
         @endunless
 
         <nav aria-label="Основная навигация" class="ml-auto flex shrink-0 items-center gap-1">
-            <a href="{{ route('catalog.brands') }}" class="hidden min-h-11 items-center rounded-pill px-3 text-sm font-semibold hover:bg-sunken md:inline-flex">Каталог</a>
+            <a href="{{ route('catalog.brands') }}" @if (request()->routeIs('catalog.*')) aria-current="page" @endif class="hidden min-h-11 items-center rounded-pill px-3 text-sm font-semibold hover:bg-sunken md:inline-flex">Каталог</a>
             @if ($опт)
                 <a href="{{ route('wholesale.index') }}" class="hidden min-h-11 items-center rounded-pill px-3 text-sm font-semibold hover:bg-sunken md:inline-flex">Оптовая закупка</a>
             @endif
@@ -39,9 +43,6 @@
                         <span class="grid h-5 min-w-5 place-items-center rounded-pill bg-brand px-1 text-xs text-on-brand">{{ $cartCount }}</span>
                     @endif
                 </a>
-            @endif
-            @if ($primaryPhone['tel'])
-                <a href="tel:{{ $primaryPhone['tel'] }}" class="hidden min-h-11 items-center rounded-pill px-3 text-sm font-bold text-brand-ink xl:inline-flex">{{ $primaryPhone['display'] }}</a>
             @endif
             <details class="nav-menu relative md:hidden">
                 <summary class="grid h-11 w-11 cursor-pointer place-items-center rounded-pill hover:bg-sunken" aria-label="Меню">
@@ -68,35 +69,47 @@
         </nav>
     </div>
 
-    <div class="border-t border-line">
-        <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2">
+    <div class="storefront-subnav border-t border-line">
+        <div class="storefront-subnav-inner mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2">
             @if (settings()->aiChatEnabled())
                 <x-storefront-mode-switch :chat="$чатГлавная" />
             @else
                 <a href="{{ route('catalog.brands') }}" class="inline-flex min-h-11 items-center font-bold">Каталог автостёкол</a>
             @endif
-            @if (count(settings()->cities()) > 1)
-                <form action="{{ route('city.select') }}" method="post">
-                    @csrf
-                    <label class="sr-only" for="city-select">Город</label>
-                    <select id="city-select" name="city" onchange="this.form.submit()" class="min-h-11 max-w-36 rounded-pill border border-line bg-surface px-3 text-sm">
-                        @foreach (settings()->cities() as $city)
-                            <option value="{{ $city }}" @selected(currentCity() === $city)>{{ $city }}</option>
-                        @endforeach
-                    </select>
-                    <noscript><button type="submit" class="btn btn-outline btn-sm">Выбрать</button></noscript>
-                </form>
-            @else
-                <span class="text-xs text-muted sm:text-sm">{{ currentCity() }}</span>
-            @endif
+            <div class="storefront-utilities flex items-center gap-3 sm:gap-5">
+                @if (settings()->enabled('booking'))
+                    <a href="{{ route('booking.form') }}" class="hidden min-h-11 items-center text-sm font-semibold hover:text-brand-ink lg:inline-flex">Установка</a>
+                @endif
+                @if ($primaryPhone['tel'])
+                    <a href="tel:{{ $primaryPhone['tel'] }}" class="hidden min-h-11 items-center text-sm font-bold hover:text-brand-ink lg:inline-flex">{{ $primaryPhone['display'] }}</a>
+                @endif
+                @if (count(settings()->cities()) > 1)
+                    <form action="{{ route('city.select') }}" method="post">
+                        @csrf
+                        <label class="sr-only" for="city-select">Город</label>
+                        <select id="city-select" name="city" onchange="this.form.submit()" class="min-h-11 max-w-36 rounded-pill border border-line bg-surface px-3 text-sm">
+                            @foreach (settings()->cities() as $city)
+                                <option value="{{ $city }}" @selected(currentCity() === $city)>{{ $city }}</option>
+                            @endforeach
+                        </select>
+                        <noscript><button type="submit" class="btn btn-outline btn-sm">Выбрать</button></noscript>
+                    </form>
+                @else
+                    <span class="text-xs text-muted sm:text-sm">{{ currentCity() }}</span>
+                @endif
+            </div>
         </div>
     </div>
     @unless ($чатГлавная)
         <div class="px-4 pb-3 lg:hidden">
-            <form action="{{ route('search') }}" method="get" role="search" class="relative">
+            <form action="{{ route('search') }}" method="get" role="search" class="relative" data-suggest-root>
                 <label class="sr-only" for="header-search-mobile">Марка, модель или еврокод</label>
-                <input id="header-search-mobile" type="search" name="q" value="{{ request('q') }}" placeholder="Марка, модель или еврокод" class="input !rounded-pill !bg-sunken !pr-24">
+                <input id="header-search-mobile" type="search" name="q" value="{{ request('q') }}" placeholder="Марка, модель или еврокод" class="input !rounded-pill !bg-sunken !pr-24"
+                       autocomplete="off" data-suggest="{{ route('api.suggest') }}"
+                       role="combobox" aria-expanded="false" aria-controls="header-search-mobile-suggest">
                 <button type="submit" class="btn btn-primary btn-sm absolute top-1 right-1 min-h-11">Найти</button>
+                <div id="header-search-mobile-suggest" role="listbox" data-suggest-box
+                     class="absolute inset-x-0 top-full z-50 mt-2 hidden overflow-hidden rounded-card border border-line bg-surface shadow-lift"></div>
             </form>
         </div>
     @endunless

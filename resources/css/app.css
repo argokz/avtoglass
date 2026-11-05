@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './storefront.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -67,13 +68,13 @@
     --color-on-night: oklch(97% 0.004 250);
     --color-on-night-muted: oklch(82% 0.01 250);
 
-    --radius-card: 1.25rem;
+    --radius-card: 1rem;
     --radius-lg: 1.5rem;
     --radius-pill: 999px;
 
     --shadow-card: 0 1px 3px oklch(18% 0.012 250 / 0.04), 0 8px 28px -10px oklch(18% 0.012 250 / 0.1);
     --shadow-lift: 0 4px 8px oklch(18% 0.012 250 / 0.06), 0 20px 40px -12px oklch(18% 0.012 250 / 0.16);
-    --shadow-pop: 0 6px 16px oklch(52% 0.195 27 / 0.25), 0 2px 4px oklch(52% 0.195 27 / 0.12);
+    --shadow-pop: 0 2px 4px oklch(18% 0.012 250 / 0.08);
 }
 
 /*
@@ -553,6 +554,19 @@
         .has-mobile-cta main {
             padding-bottom: 5rem;
         }
+
+        /* Нижняя таб-навигация на остальных страницах */
+        body.storefront:not(.has-mobile-cta) main {
+            padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+        }
+
+        body.storefront:not(.has-mobile-cta) .fab-whatsapp {
+            bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+        }
+
+        body.storefront:not(.has-mobile-cta) [data-ai-chat] {
+            bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)) !important;
+        }
     }
 
     /* Степпер количества */
@@ -612,6 +626,12 @@
 
     body.is-chat-home {
         background: var(--color-sunken);
+    }
+
+    /* Отложенная отрисовка секций ниже первого экрана (ускоряет FCP/LCP) */
+    .cv-auto {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 420px;
     }
 }
 

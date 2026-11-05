@@ -70,6 +70,14 @@ final class DraftService
                 throw new PurchaseException('DRAFT_VERSION_LIMIT', 409);
             }
             $changes = $this->validateChanges($changes, $draft->sales_mode);
+            if (isset($changes['vehicle'])) {
+                $previousVehicle = $draft->vehicle;
+                $modelChanged = array_key_exists('model_id', $changes['vehicle']) && ($changes['vehicle']['model_id'] ?? null) !== ($previousVehicle['model_id'] ?? null);
+                $yearChanged = array_key_exists('year', $changes['vehicle']) && ($changes['vehicle']['year'] ?? null) !== ($previousVehicle['year'] ?? null);
+                if ($modelChanged || $yearChanged) {
+                    $draft->vehicle = array_diff_key($previousVehicle, array_flip($modelChanged ? ['year', 'brand_id', 'generation_id', 'body', 'doors', 'options'] : ['generation_id', 'body', 'doors', 'options']));
+                }
+            }
             if (array_key_exists('items', $changes)) {
                 $this->replaceItems($draft, $changes['items']);
             }
@@ -78,6 +86,20 @@ final class DraftService
                     $draft->{$field} = array_replace_recursive($draft->{$field}, $changes[$field]);
                 }
             }
+            if (array_key_exists('payment_method', $changes)) {
+                if (! array_key_exists($changes['payment_method'], PaymentOptions::available($buyer))) {
+                    throw ValidationException::withMessages(['payment_method' => 'PAYMENT_METHOD_UNAVAILABLE']);
+                }
+                $draft->payment_method = $changes['payment_method'];
+            }
+            $fulfillment = $draft->fulfillment;
+            if (! in_array($fulfillment['type'] ?? '', ['delivery', 'visit'], true)) {
+                unset($fulfillment['address']);
+            }
+            if (! in_array($fulfillment['type'] ?? '', ['installation', 'visit'], true)) {
+                unset($fulfillment['slot_start'], $fulfillment['slot_end']);
+            }
+            $draft->fulfillment = $fulfillment;
             if (isset($changes['locale'])) {
                 $draft->locale = $changes['locale'];
             }
@@ -92,7 +114,7 @@ final class DraftService
 
     private function validateChanges(array $changes, SalesMode $mode): array
     {
-        if ($changes === [] || array_diff(array_keys($changes), ['items', 'vehicle', 'contacts', 'fulfillment', 'locale'])) {
+        if ($changes === [] || array_diff(array_keys($changes), ['items', 'vehicle', 'contacts', 'fulfillment', 'locale', 'payment_method'])) {
             throw ValidationException::withMessages(['_input' => 'DRAFT_FIELDS_INVALID']);
         }
         $maxQuantity = config('ordering.limits.'.$mode->value.'_max_quantity');
@@ -102,6 +124,7 @@ final class DraftService
         }
 
         return Validator::make($changes, [
+            'payment_method' => ['sometimes', 'required', 'string', Rule::in(['cash', 'card', 'kaspi', 'invoice'])],
             'items' => ['sometimes', InputType::array(), 'array', 'list', 'max:'.$maxItems],
             'items.*' => [InputType::array(), 'array:line_id,offer_id,reference,quantity,comment,selection_mode,article_confirmed,manufacturer_confirmed'],
             'items.*.line_id' => ['required', 'uuid', 'distinct:ignore_case'],

@@ -47,6 +47,7 @@ class ProductQuery
             query: $filter->query,
             inStockOnly: $filter->inStockOnly,
             supplierId: $filter->supplierId,
+            kzOnly: $filter->kzOnly,
         );
 
         return $this->build($filter)
@@ -73,20 +74,26 @@ class ProductQuery
             year: $filter->year,
             query: $filter->query,
             inStockOnly: $filter->inStockOnly,
+            kzOnly: $filter->kzOnly,
         );
 
-        return DB::table('offers')
+        return $this->build($without)
+            ->reorder()
+            ->toBase()
+            ->join('offers', function ($join) {
+                $join->on('offers.product_id', '=', 'products.id')
+                    ->where('offers.is_active', true);
+            })
             ->join('suppliers', 'suppliers.id', '=', 'offers.supplier_id')
-            ->whereIn('offers.product_id', $this->build($without)->reorder()->select('products.id'))
-            ->where('offers.is_active', true)
             ->groupBy('suppliers.id', 'suppliers.name', 'suppliers.tier')
-            ->orderByDesc(DB::raw('COUNT(DISTINCT offers.product_id)'))
-            ->get([
+            ->orderByDesc(DB::raw('COUNT(DISTINCT products.id)'))
+            ->select([
                 'suppliers.id',
                 'suppliers.name',
                 'suppliers.tier',
-                DB::raw('COUNT(DISTINCT offers.product_id) as total'),
-            ]);
+                DB::raw('COUNT(DISTINCT products.id) as total'),
+            ])
+            ->get();
     }
 
     /**
@@ -107,6 +114,7 @@ class ProductQuery
             query: $filter->query,
             inStockOnly: $filter->inStockOnly,
             supplierId: $filter->supplierId,
+            kzOnly: $filter->kzOnly,
         );
 
         $selects = ['COUNT(*) as total'];
@@ -190,6 +198,10 @@ class ProductQuery
             $query->where('in_stock', true);
         }
 
+        if ($filter->kzOnly) {
+            $query->where('origin_country', 'KZ');
+        }
+
         /*
          * Марка стекла. Отбор идёт по предложениям: карточка остаётся, если
          * хоть один поставщик её возит — иначе фильтр прятал бы товар,
@@ -236,6 +248,12 @@ class ProductQuery
                 });
             }
         }
+
+        /*
+         * Приоритет отечественного товара в общей выдаче. Ставим до
+         * сортировки по цене: сначала «Сделано в Казахстане», внутри — дешевле.
+         */
+        $query->orderByRaw("case when products.origin_country = 'KZ' then 0 else 1 end");
 
         return $query;
     }

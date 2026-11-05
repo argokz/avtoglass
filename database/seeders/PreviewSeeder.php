@@ -31,6 +31,7 @@ class PreviewSeeder extends Seeder
 
         $credentialsPath = base_path('.codex/modernization/preview-access.json');
         if (Product::where('slug', 'preview-camry-70')->exists()) {
+            Product::where('slug', 'preview-camry-70')->update(['origin_country' => 'KZ']);
             $this->command?->info('Preview fixtures already exist; left unchanged.');
 
             return;
@@ -58,6 +59,7 @@ class PreviewSeeder extends Seeder
                 $product = Product::factory()->create([
                     'slug' => $slug, 'name' => $name, 'eurocode' => 'PREVIEW-'.($index + 1),
                     'camera' => $index === 1, 'glass_type' => $index === 2 ? 'rear' : 'windshield',
+                    'origin_country' => $index === 0 ? 'KZ' : 'CN',
                 ]);
                 Fitment::create(['product_id' => $product->id, 'car_model_id' => $model->id, 'year_from' => 2017, 'year_to' => 2024, 'is_verified' => true]);
                 Offer::factory()->price($price)->create(['product_id' => $product->id, 'supplier_id' => $supplier->id, 'article' => 'DEMO-'.($index + 1), 'stock_qty' => $stock]);

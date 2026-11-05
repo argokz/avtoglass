@@ -6,6 +6,7 @@ namespace App\Enums;
 enum OrderSource: string
 {
     case ProductPage = 'product_page'; // кнопка в карточке товара
+    case OneClick = 'one_click';    // экспресс-покупка: только телефон, перезвонить
     case Selection = 'selection';    // «подберите мне стекло», товар ещё не выбран
     case Cart = 'cart';         // корзина: несколько позиций одной заявкой
     case Phone = 'phone';
@@ -19,6 +20,7 @@ enum OrderSource: string
     {
         return match ($this) {
             self::ProductPage => 'Карточка товара',
+            self::OneClick => 'Покупка в 1 клик',
             self::Selection => 'Заявка на подбор',
             self::Cart => 'Корзина',
             self::Phone => 'Телефон',
@@ -34,6 +36,7 @@ enum OrderSource: string
     {
         return match ($this) {
             self::Booking => 'success',
+            self::OneClick => 'success',
             self::WhatsApp => 'info',
             self::Cart => 'primary',
             self::Wholesale => 'warning',

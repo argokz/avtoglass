@@ -4,33 +4,54 @@
 
 @section('content')
 
-{{--
-    Один вопрос на первый экран: какая машина.
-    Остальное — после ответа. Год здесь же, потому что Camry 2006
-    и Camry 2018 — разные стёкла, и спрашивать об этом на следующем
-    шаге значит заставлять человека дважды объяснять одно и то же.
---}}
-<section class="rounded-lg border border-line bg-surface px-5 py-8 shadow-card sm:px-10 sm:py-12">
-    <p class="text-sm font-semibold text-muted">{{ settings()->brandName() }}</p>
+<section class="store-hero" aria-labelledby="home-title">
+    <div class="hero-copy">
+        <p class="hero-location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></svg> {{ currentCity() }} — подбор и установка</p>
+        <h1 id="home-title">Стекло на какую машину?</h1>
+        <p class="hero-lead">Подберите стекло по модели и году, сравните цены и выберите установку или доставку.</p>
+        <div class="hero-links">
+            <a href="#car-finder" class="btn btn-primary btn-lg">Подобрать по автомобилю</a>
+            <a href="{{ route('search') }}" class="btn btn-ghost">Найти по артикулу</a>
+        </div>
+        <nav class="mt-4 flex flex-wrap gap-2 lg:hidden" aria-label="Быстрый выбор типа стекла (мобильный)">
+            @foreach (['windshield' => 'Лобовые', 'rear' => 'Задние', 'side' => 'Боковые'] as $type => $label)
+                <a href="{{ route('catalog.brands', ['type' => $type]) }}" class="chip !min-h-10 !px-3.5 !py-1.5 text-xs">
+                    <x-glass-icon :type="$type" class="h-4 w-4 text-brand-ink" />
+                    {{ $label }}
+                </a>
+            @endforeach
+        </nav>
+        @if (request()->cookie('storefront_mode') === 'chat' && settings()->aiChatEnabled())
+            <a href="{{ route('assistant') }}" class="mt-4 inline-flex min-h-11 items-center font-bold text-brand-ink">Продолжить в чате →</a>
+        @endif
+    </div>
+    <div class="hero-glass">
+        <div class="glass-wordmark" aria-hidden="true">Автостеклоцентр</div>
+        <svg viewBox="0 0 440 280" fill="none" class="hero-windshield" aria-hidden="true">
+            <path d="M92 48 Q220 18 348 48 L402 226 Q220 263 38 226 Z" fill="url(#hero-glass-fill)" stroke="currentColor" stroke-width="2"/>
+            <path d="M104 63 Q220 39 336 63 L382 214 Q220 244 58 214 Z" stroke="currentColor" opacity=".3"/>
+            <path d="M155 48 98 227M285 38 220 241" stroke="white" stroke-width="20" opacity=".07"/>
+            <path d="M92 48 Q220 18 348 48" stroke="#ef3340" stroke-width="4"/>
+            <defs><linearGradient id="hero-glass-fill" x1="80" y1="40" x2="360" y2="260" gradientUnits="userSpaceOnUse"><stop stop-color="#81979d" stop-opacity=".65"/><stop offset="1" stop-color="#15272e" stop-opacity=".25"/></linearGradient></defs>
+        </svg>
+        <div class="glass-caption"><p>Каждая деталь имеет значение.</p><span>Датчики, обогрев, камера — учтём комплектацию.</span></div>
+        <nav class="hero-glass-types" aria-label="Быстрый выбор типа стекла">
+            @foreach (['windshield' => 'Лобовые', 'rear' => 'Задние', 'side' => 'Боковые'] as $type => $label)
+                <a href="{{ route('catalog.brands', ['type' => $type]) }}">{{ $label }} <x-glass-icon :type="$type" class="h-5 w-5" /></a>
+            @endforeach
+        </nav>
+    </div>
+</section>
 
-    @if (request()->cookie('storefront_mode') === 'chat' && settings()->aiChatEnabled())
-        <a href="{{ route('assistant') }}" class="mt-3 inline-flex min-h-11 items-center gap-2 rounded-pill bg-brand-soft px-4 text-sm font-bold text-brand-ink">
-            Продолжить в чате <span aria-hidden="true">→</span>
-        </a>
-    @endif
-
-    <h1 class="mt-3 max-w-2xl font-display text-3xl leading-[1.1] font-extrabold tracking-tight sm:text-4xl">
-        Стекло на какую машину?
-    </h1>
-
-    <p class="mt-3 max-w-xl text-sm text-muted sm:text-base">
-        Марка, модель и год — покажем стёкла и цену с установкой.
-    </p>
-
+<section id="car-finder" class="finder-panel scroll-mt-64 lg:scroll-mt-48" aria-labelledby="finder-title">
+    <div class="section-heading">
+        <div><h2 id="finder-title">Подбор по автомобилю</h2><p class="mt-1 text-sm text-muted">Выберите марку и модель. Год поможет уточнить поколение.</p></div>
+        <span class="finder-note"><x-glass-icon type="windshield" class="h-5 w-5" /> Учитываем совместимость</span>
+    </div>
     <form action="{{ route('pick') }}" method="post" data-car-picker
           data-models-base="{{ url('/api/brands') }}"
           data-selected-model="{{ old('model') }}"
-          class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.2fr_7rem_auto]">
+          class="finder-form grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.2fr_7rem_auto]">
         @csrf
 
         <div>
@@ -53,6 +74,9 @@
             <select id="pick-model" name="model" data-picker-model disabled class="select">
                 <option value="">Сначала марка</option>
             </select>
+            @error('model')
+                <p class="mt-1 text-xs text-warn-ink" role="alert">{{ $message }}</p>
+            @enderror
         </div>
 
         <div>
@@ -72,33 +96,37 @@
             </button>
         </div>
     </form>
-
-    <p class="mt-4 text-sm text-muted">
-        @if (settings()->aiChatEnabled())
-            Не хотите выбирать в форме —
-            <a href="{{ route('assistant') }}" class="font-semibold text-brand-ink underline underline-offset-4">напишите помощнику</a>,
-            он подберёт и оформит заявку в чате.
-        @endif
-        Код с уголка стекла — в поиск наверху.
+    <div class="finder-help">
         @if (settings()->enabled('vin_lookup'))
-            Есть VIN —
-            <a href="{{ route('vin.form') }}" class="font-semibold text-brand-ink underline underline-offset-4">подберём по нему</a>.
+            <a href="{{ route('vin.form') }}">Не знаете комплектацию? Подбор по VIN →</a>
         @endif
-        @php $покупатель = текущийПокупатель(); @endphp
-        @if ($покупатель?->seesWholesalePrices())
-            Оптовые цены открыты.
-        @elseif ($покупатель?->wholesale_status === \App\Enums\WholesaleStatus::Pending)
-            Заявку на опт смотрит менеджер — пока цены розничные.
-        @else
-            Сервисам и юрлицам —
-            <a href="{{ $покупатель ? route('account.profile') : route('account.login') }}" class="font-semibold text-brand-ink underline underline-offset-4">
-                {{ $покупатель ? 'заявка на опт в профиле' : 'войдите для оптовых цен' }}
-            </a>.
+        @if (settings()->aiChatEnabled())
+            <a href="{{ route('assistant') }}">Помощь с подбором в чате →</a>
         @endif
-    </p>
+        <a href="{{ текущийПокупатель() ? route('wholesale.index') : route('account.login') }}">Сервисам и магазинам — оптовые цены →</a>
+    </div>
 </section>
 
-<ol class="mt-6 grid list-none gap-3 sm:grid-cols-3">
+@if (! empty($myCar))
+<section class="mt-8" aria-labelledby="my-car-title">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">ДЛЯ ВАШЕГО АВТО</p>
+            <h2 id="my-car-title">Стёкла для {{ $myCar['label'] }}</h2>
+        </div>
+        <a href="{{ $myCar['url'] }}" class="text-sm font-bold text-brand-ink underline-offset-4 hover:underline">
+            Все подходящие →
+        </a>
+    </div>
+    <div class="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        @foreach ($myCar['products'] as $product)
+            <x-product-card :product="$product" />
+        @endforeach
+    </div>
+</section>
+@endif
+
+<ol class="purchase-steps mt-6 grid list-none gap-3 sm:grid-cols-3">
     <li class="card flex gap-3 px-4 py-4">
         <span class="step-num">1</span>
         <div>
@@ -122,31 +150,8 @@
     </li>
 </ol>
 
-@if ($services->isNotEmpty())
-    <section class="mt-10 sm:mt-12">
-        <h2 class="text-xl font-extrabold sm:text-2xl">Работы и цены</h2>
-        <p class="mt-1 text-sm text-muted">Стекло считается отдельно. Итог со стеклом — в карточке, до звонка.</p>
 
-        <div class="card mt-4 divide-y divide-line !py-0">
-            @foreach ($services as $service)
-                <div class="flex items-baseline justify-between gap-4 px-5 py-3.5">
-                    <div class="min-w-0">
-                        <p class="font-bold">{{ $service->name }}</p>
-                        @if ($service->duration_minutes)
-                            <p class="mt-0.5 text-xs text-faint">около {{ $service->humanDuration() }}</p>
-                        @endif
-                    </div>
-                    <p class="price price-brand shrink-0 text-lg">
-                        {{ number_format((float) $service->price, 0, ',', ' ') }} ₸
-                    </p>
-                </div>
-            @endforeach
-        </div>
-        <p class="mt-3 text-sm text-muted">Наличие и срок подтверждает менеджер.</p>
-    </section>
-@endif
-
-<section class="mt-10 sm:mt-12">
+<section class="cv-auto mt-10 sm:mt-12">
     <div class="mb-4 flex items-baseline justify-between gap-4">
         <h2 class="text-xl font-extrabold sm:text-2xl">Марки</h2>
         <a href="{{ route('catalog.brands') }}" class="text-sm font-bold text-brand-ink hover:underline">
@@ -174,7 +179,7 @@
 </section>
 
 @if ($popularModels->isNotEmpty())
-    <section class="mt-10 sm:mt-12">
+    <section class="cv-auto mt-10 sm:mt-12">
         <h2 class="mb-4 text-xl font-extrabold sm:text-2xl">Часто ищут</h2>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             @foreach ($popularModels as $model)
@@ -191,7 +196,7 @@
     </section>
 @endif
 
-<section class="mt-10 sm:mt-12">
+<section class="cv-auto mt-10 sm:mt-12">
     <h2 class="mb-4 text-xl font-extrabold sm:text-2xl">Или по типу стекла</h2>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         @foreach ([
@@ -211,7 +216,31 @@
     </div>
 </section>
 
-<section class="mt-10 grid gap-3 sm:mt-12 sm:grid-cols-3">
+@if ($services->isNotEmpty())
+    <section class="cv-auto mt-10 sm:mt-12">
+        <h2 class="text-xl font-extrabold sm:text-2xl">Работы и цены</h2>
+        <p class="mt-1 text-sm text-muted">Стекло считается отдельно. Итог со стеклом — в карточке, до звонка.</p>
+
+        <div class="card mt-4 divide-y divide-line !py-0">
+            @foreach ($services as $service)
+                <div class="flex items-baseline justify-between gap-4 px-5 py-3.5">
+                    <div class="min-w-0">
+                        <p class="font-bold">{{ $service->name }}</p>
+                        @if ($service->duration_minutes)
+                            <p class="mt-0.5 text-xs text-faint">около {{ $service->humanDuration() }}</p>
+                        @endif
+                    </div>
+                    <p class="price price-brand shrink-0 text-lg">
+                        {{ formatPrice((float) $service->price) }} ₸
+                    </p>
+                </div>
+            @endforeach
+        </div>
+        <p class="mt-3 text-sm text-muted">Наличие и срок подтверждает менеджер.</p>
+    </section>
+@endif
+
+<section class="cv-auto mt-10 grid gap-3 sm:mt-12 sm:grid-cols-3">
     <a href="https://2gis.kz/search/{{ rawurlencode(settings()->address()) }}"
        target="_blank" rel="noopener"
        class="card card-hover px-5 py-4 text-sm">

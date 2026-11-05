@@ -1,5 +1,16 @@
 import './preview-ux';
 
+const orderErrors = document.querySelector('[data-order-errors]');
+if (orderErrors) {
+    const field = orderErrors.closest('form')?.querySelector('.input-error');
+    if (field) {
+        const disclosure = field.closest('details');
+        if (disclosure) disclosure.open = true;
+        field.setAttribute('aria-invalid', 'true');
+    }
+    (field || orderErrors).focus();
+}
+
 /**
  * Toast-уведомления. Контейнер #toast-root лежит в layout.
  * Вызов: window.toast('Добавлено в корзину') или window.toast('Ошибка', 'error')
@@ -32,6 +43,160 @@ import './preview-ux';
         if (!el.isConnected) return;
         el.classList.add('toast-out');
         el.addEventListener('animationend', () => el.remove(), { once: true });
+    }
+})();
+
+/**
+ * Подсказки в строке поиска. Запрос — на паузе ввода (250 мс), не на каждую
+ * букву; Escape закрывает, стрелки ходят по списку, Enter открывает выбранное.
+ */
+(function () {
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+
+    const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const highlightMatch = (text, query) => {
+        const raw = String(text ?? '');
+        const q = String(query ?? '').trim();
+        if (!q) return escapeHtml(raw);
+        const re = new RegExp(`(${escapeRegExp(q)})`, 'ig');
+        return raw
+            .split(re)
+            .map((part, idx) => (idx % 2 === 1
+                ? `<mark class="rounded bg-brand-soft px-0.5 font-bold text-brand-ink">${escapeHtml(part)}</mark>`
+                : escapeHtml(part)))
+            .join('');
+    };
+
+    const suggestCache = new Map();
+
+    document.querySelectorAll('[data-suggest]').forEach((input) => {
+        const root = input.closest('[data-suggest-root]');
+        const box = root?.querySelector('[data-suggest-box]');
+        if (!box) return;
+
+        let timer = null;
+        let abort = null;
+        let active = -1;
+
+        const close = () => {
+            box.classList.add('hidden');
+            box.innerHTML = '';
+            input.setAttribute('aria-expanded', 'false');
+            active = -1;
+        };
+
+        const render = (data, query = '') => {
+            const items = [];
+            if (data.models?.length) {
+                items.push('<div class="px-4 pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-faint">Автомобили</div>');
+                data.models.forEach((m) => items.push(
+                    `<a role="option" href="${m.url}" class="flex min-h-11 items-center px-4 py-2 text-sm font-semibold transition hover:bg-sunken"><span>${highlightMatch(m.label, query)}</span></a>`
+                ));
+            }
+            if (data.products?.length) {
+                items.push('<div class="px-4 pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-faint">Стёкла</div>');
+                data.products.forEach((p) => items.push(
+                    `<a role="option" href="${p.url}" class="flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm transition hover:bg-sunken">
+                        <span class="min-w-0 truncate">${highlightMatch(p.label, query)}</span>
+                        ${p.price ? `<span class="shrink-0 font-bold text-brand-ink">${escapeHtml(p.price)}</span>` : ''}
+                    </a>`
+                ));
+            }
+            if (!items.length) {
+                close();
+                return;
+            }
+            box.innerHTML = items.join('');
+            box.classList.remove('hidden');
+            input.setAttribute('aria-expanded', 'true');
+            active = -1;
+        };
+
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) {
+                close();
+                return;
+            }
+            const cacheKey = `${input.dataset.suggest}::${q.toLowerCase()}`;
+            if (suggestCache.has(cacheKey)) {
+                render(suggestCache.get(cacheKey), q);
+                return;
+            }
+            timer = setTimeout(async () => {
+                abort?.abort();
+                abort = new AbortController();
+                try {
+                    const res = await fetch(`${input.dataset.suggest}?q=${encodeURIComponent(q)}`, { signal: abort.signal });
+                    if (res.ok) {
+                        const payload = await res.json();
+                        suggestCache.set(cacheKey, payload);
+                        render(payload, q);
+                    }
+                } catch { /* сеть молчит — подсказки просто не показываем */ }
+            }, 220);
+        });
+
+        input.addEventListener('keydown', (event) => {
+            const options = [...box.querySelectorAll('[role="option"]')];
+            if (event.key === 'Escape') {
+                close();
+                return;
+            }
+            if (!options.length) return;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                active = event.key === 'ArrowDown'
+                    ? (active + 1) % options.length
+                    : (active - 1 + options.length) % options.length;
+                options.forEach((el, i) => el.classList.toggle('bg-sunken', i === active));
+                options[active].scrollIntoView({ block: 'nearest' });
+            } else if (event.key === 'Enter' && active >= 0) {
+                event.preventDefault();
+                options[active].click();
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!root.contains(event.target)) close();
+        });
+    });
+})();
+
+/**
+ * Модалка «Купить в 1 клик». Кнопки с data-quick-order несут адрес формы
+ * и название товара; сама модалка одна на страницу (#quick-order-modal).
+ */
+(function () {
+    const modal = document.getElementById('quick-order-modal');
+    if (!(modal instanceof HTMLDialogElement)) return;
+
+    const form = modal.querySelector('[data-quick-order-form]');
+    const productLabel = modal.querySelector('[data-quick-order-product]');
+    const marker = modal.querySelector('input[name="_quick_order"]');
+
+    const open = (action, name) => {
+        form.setAttribute('action', action);
+        marker.value = action;
+        productLabel.textContent = name || '';
+        if (!modal.open) modal.showModal();
+        modal.querySelector('#quick-order-phone')?.focus();
+    };
+
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-quick-order]');
+        if (!trigger) return;
+        event.preventDefault();
+        open(trigger.dataset.quickOrder, trigger.dataset.quickOrderName);
+    });
+
+    // После ошибки валидации открываем модалку снова — с тем же товаром.
+    if (modal.dataset.openOnLoad !== undefined && modal.dataset.action) {
+        open(modal.dataset.action, '');
     }
 })();
 
@@ -146,18 +311,20 @@ document.querySelectorAll('[data-password-toggle]').forEach((btn) => {
 });
 
 /**
- * Степпер количества в корзине.
+ * Степпер количества в корзине и карточке товара.
  */
 document.querySelectorAll('[data-qty-stepper]').forEach((stepper) => {
-    const input = stepper.querySelector('input[type="number"], input[name="qty"]');
+    const input = stepper.querySelector('input[type="number"], input[name="qty"], input[name="quantity"]');
     const form = stepper.closest('form');
     if (!input) return;
 
     stepper.querySelectorAll('[data-qty]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const delta = Number(btn.dataset.qty);
-            const next = Math.max(1, (Number(input.value) || 1) + delta);
+            const max = Number(input.max) || 99;
+            const next = Math.max(1, Math.min(max, (Number(input.value) || 1) + delta));
             input.value = next;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
             if (form && form.dataset.autoSubmit !== undefined) {
                 form.requestSubmit();
             }
@@ -182,7 +349,9 @@ document.querySelectorAll('[data-car-picker]').forEach((picker) => {
         model.disabled = disabled;
     };
 
+    let modelRequest = 0;
     const loadModels = async () => {
+        const requestId = ++modelRequest;
         const slug = brand.selectedOptions[0]?.dataset.slug;
         const base = (picker.dataset.modelsBase || '/api/brands').replace(/\/$/, '');
 
@@ -201,6 +370,7 @@ document.querySelectorAll('[data-car-picker]').forEach((picker) => {
             if (!response.ok) throw new Error(response.statusText);
 
             const models = await response.json();
+            if (requestId !== modelRequest) return;
 
             model.innerHTML =
                 '<option value="">Все модели марки</option>' +
@@ -213,6 +383,7 @@ document.querySelectorAll('[data-car-picker]').forEach((picker) => {
                 model.value = selectedModel;
             }
         } catch {
+            if (requestId !== modelRequest) return;
             // Не блокируем покупателя: без модели форма ведёт на страницу марки,
             // где он выберет её руками.
             reset('Продолжить без модели', false);
@@ -300,8 +471,11 @@ function applyCartQuote(fulfillment) {
     const quote = quotes[fulfillment];
     if (!quote) return;
 
-    const format = (value) =>
-        `${Math.round(Number(value) || 0).toLocaleString('ru-RU').replace(/\u00a0/g, ' ')} ₸`;
+    const format = (value) => {
+        const amount = Number(value) || 0;
+        const fraction = Math.round(amount * 100) % 100 === 0 ? 0 : 2;
+        return `${amount.toLocaleString('ru-RU', { minimumFractionDigits: fraction, maximumFractionDigits: 2 }).replace(/\u00a0/g, ' ')} ₸`;
+    };
 
     document.querySelectorAll('[data-cart-summary]').forEach((el) => {
         const glass = el.querySelector('[data-quote-glass]');
@@ -320,17 +494,34 @@ function applyCartQuote(fulfillment) {
     });
 }
 
-document.querySelector('[data-offer-list]')?.addEventListener('change', (event) => {
-    if (event.target.name !== 'picked_offer') return;
-
+function syncProductOffer(offer) {
+    if (!offer) return;
     document.querySelectorAll('[data-selected-offer]').forEach((input) => {
-        input.value = event.target.value;
+        input.value = offer.value;
     });
-
-    const price = document.querySelector('[data-product-price]');
-    if (price && event.target.dataset.priceLabel) {
-        price.textContent = event.target.dataset.priceLabel;
+    document.querySelectorAll('[data-product-price]').forEach((price) => {
+        price.textContent = offer.dataset.priceLabel;
+    });
+    document.querySelectorAll('[data-product-total]').forEach((total) => {
+        total.textContent = offer.dataset.totalLabel;
+    });
+    if (offer.dataset.supplierLabel) {
+        document.querySelectorAll('[data-product-supplier]').forEach((el) => {
+            el.textContent = offer.dataset.supplierLabel;
+        });
     }
+    const stock = document.querySelector('[data-product-stock]');
+    if (stock) stock.textContent = offer.dataset.stockLabel;
+}
+
+document.querySelector('[data-offer-list]')?.addEventListener('change', (event) => {
+    if (event.target.name === 'picked_offer') syncProductOffer(event.target);
+});
+syncProductOffer(document.querySelector('[data-offer-list] input:checked'));
+document.querySelector('[data-product-quantity-form] input[name="quantity"]')?.addEventListener('input', (event) => {
+    document.querySelectorAll('[data-product-mobile-quantity]').forEach(quantity => {
+        quantity.value = event.target.value;
+    });
 });
 
 document.addEventListener('livewire:init', () => {

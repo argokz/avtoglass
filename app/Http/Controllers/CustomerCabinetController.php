@@ -2,6 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\StartPayment;
+use App\Ai\OrderReplies;
+use App\Ai\Runtime\ChatIdentity;
+use App\Cart\Cart;
+use App\Domain\Ordering\CustomerPurchases;
+use App\Domain\Ordering\PaymentOptions;
+use App\Domain\Shared\PurchaseException;
 use App\Enums\WholesaleStatus;
 use App\Models\Customer;
 use App\Models\Order;
@@ -9,6 +16,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -28,18 +36,81 @@ class CustomerCabinetController extends Controller
     {
         $user = Auth::user();
 
-        $orders = $user->customer_id
-            ? Order::where('customer_id', $user->customer_id)
-                ->with(['items', 'payments'])
-                ->latest()
-                ->get()
-            : collect();
+        $orders = Order::query()
+            ->where(fn ($query) => $query->where('customer_id', $user->customer_id)
+                ->orWhereIn('id', DB::table('purchase_access_grants')->where('customer_id', $user->customer_id)->select('order_id')))
+            ->when($user->customer_id === null, fn ($query) => $query->whereRaw('1 = 0'))
+            ->with(['items', 'payments'])
+            ->latest()
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        $purchases = app(CustomerPurchases::class);
+        $payments = app(StartPayment::class);
+        // Кнопка «Оплатить» только там, где касса её примет: те же правила, что у purchase.pay.
+        // Кабинет без привязанной карточки заказов не видит — и оплачивать ему нечего.
+        $online = $user->customer_id === null ? [] : array_keys(PaymentOptions::available(ChatIdentity::buyer()));
 
         return view('account.orders', [
             'user' => $user,
             'orders' => $orders,
+            // Что можно сделать с заказом прямо из списка — считаем здесь, а не в шаблоне.
+            'actions' => $orders->getCollection()->mapWithKeys(fn (Order $order) => [$order->id => [
+                'pay' => in_array($order->payment_method?->value, $online, true)
+                    && PaymentOptions::driver($order->payment_method->value) !== null && $payments->isPayable($order),
+                'cancel' => $purchases->cancelBlocker($order) === null,
+                'reorder' => $order->items->contains(fn ($item) => $item->product_id !== null),
+            ]])->all(),
             'естьЧтоПривязать' => $user->customer_id === null && $this->прошлыеЗаявки($user->phone),
         ]);
+    }
+
+    public function cancel(Request $request, string $token, CustomerPurchases $purchases): RedirectResponse
+    {
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        try {
+            $order = $purchases->cancel(ChatIdentity::buyer(), $token, (string) ($data['reason'] ?? ''));
+        } catch (PurchaseException $exception) {
+            abort_if($exception->errorCode === 'RESOURCE_NOT_FOUND', 404);
+
+            return back()->with('status', OrderReplies::cancel(['order' => ['number' => ''], 'cancel' => ['code' => $exception->errorCode]], false));
+        }
+
+        return back()->with('status', "Заказ {$order->number} отменён. Менеджер получил уведомление.");
+    }
+
+    /**
+     * «Заказать снова» для розницы: позиции прошлого заказа — в корзину.
+     *
+     * Цены берём сегодняшние, а не из старого заказа: обещать прошлую цену
+     * мы не можем, а корзина и так считает по текущей. Чего больше нет на
+     * витрине, не кладём и прямо об этом говорим.
+     */
+    public function reorder(string $token, CustomerPurchases $purchases, Cart $cart): RedirectResponse
+    {
+        try {
+            $order = $purchases->owned(ChatIdentity::buyer(), $token);
+        } catch (PurchaseException) {
+            abort(404);
+        }
+        $added = 0;
+        $skipped = [];
+        foreach ($order->items()->whereNotNull('product_id')->with('product')->get() as $item) {
+            if ($item->product === null || ! $item->product->is_published) {
+                $skipped[] = $item->name;
+
+                continue;
+            }
+            $cart->add($item->product, max(1, (int) $item->quantity), $item->offer_id);
+            $added++;
+        }
+        if ($added === 0) {
+            return back()->with('status', 'Позиций из этого заказа сейчас нет на витрине. Позвоните — подберём замену.');
+        }
+
+        return redirect()->route('cart.show')->with('success', $skipped === []
+            ? 'Позиции заказа '.$order->number.' в корзине. Цены — сегодняшние.'
+            : 'Добавили то, что есть сейчас. Нет на витрине: '.implode(', ', $skipped).'.');
     }
 
     public function profile(): View
@@ -163,7 +234,7 @@ class CustomerCabinetController extends Controller
 
         $order = Order::query()
             ->where('number', $number)
-            ->whereHas('customer', fn ($query) => $query->where('phone', $phone))
+            ->whereHas('customer', fn ($query) => $query->where('phone_hash', Customer::phoneHash($phone)))
             ->first();
 
         if ($order === null) {
@@ -185,7 +256,7 @@ class CustomerCabinetController extends Controller
             return false;
         }
 
-        $customer = Customer::where('phone', $phone)->first();
+        $customer = Customer::where('phone_hash', Customer::phoneHash($phone))->first();
 
         return $customer !== null && $customer->orders()->exists();
     }

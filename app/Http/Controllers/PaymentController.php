@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Actions\ApplyPaymentCallback;
 use App\Actions\StartPayment;
-use App\Enums\PaymentMethod;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Payments\Gateways\FreedomPayGateway;
@@ -33,7 +32,7 @@ class PaymentController extends Controller
 
         abort_if($order === null, 404);
 
-        $driver = $order->payment_method === PaymentMethod::Card ? 'halyk' : null;
+        $driver = $order->purchase_draft_id ? \App\Domain\Ordering\PaymentOptions::driver($order->payment_method?->value ?? '') : $order->payment_method?->driver();
         $url = $this->start->begin($order, $driver);
 
         if ($url === null) {

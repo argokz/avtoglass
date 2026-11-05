@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApplyForwardedPrefix;
+use App\Http\Middleware\ContentSecurityPolicy;
 use App\Http\Middleware\OrderingApiBoundary;
 use App\Http\Ordering\ApiResponse;
 use Illuminate\Foundation\Application;
@@ -22,6 +23,10 @@ return Application::configure(basePath: dirname(__DIR__))
          * включая редиректы гостя на страницу входа чуть ниже.
          */
         $middleware->prepend([ApplyForwardedPrefix::class, OrderingApiBoundary::class]);
+
+        // CSP поверх всех веб-ответов. По умолчанию Report-Only: смотрим
+        // нарушения, ничего не ломая; боевой режим — CSP_ENFORCE=true.
+        $middleware->appendToGroup('web', [ContentSecurityPolicy::class]);
 
         /*
          * Nginx на этой же машине ставит X-Forwarded-Proto. Без доверия

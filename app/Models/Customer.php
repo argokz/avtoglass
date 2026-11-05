@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Crypt;
 
 class Customer extends Model
 {
@@ -25,12 +26,23 @@ class Customer extends Model
             if ($customer->wholesale_status === WholesaleStatus::Wholesale && $customer->wholesale_approved_at === null) {
                 $customer->wholesale_approved_at = now();
             }
+
+            // Слепой индекс телефона: по шифротексту искать нельзя.
+            $customer->phone_hash = self::phoneHash($customer->phone);
         });
     }
 
     protected function casts(): array
     {
         return [
+            // Персональные данные лежат в шифротексте: дамп базы их не раскрывает.
+            'phone' => 'encrypted',
+            'email' => 'encrypted',
+            'default_address' => 'encrypted',
+            'vin' => 'encrypted',
+            'car_plate' => 'encrypted',
+            'company_name' => 'encrypted',
+            'bin' => 'encrypted',
             'wholesale_status' => WholesaleStatus::class,
             'wholesale_requested_at' => 'datetime',
             'wholesale_approved_at' => 'datetime',
@@ -186,12 +198,64 @@ class Customer extends Model
         return $digits;
     }
 
+    /**
+     * Слепой индекс телефона: HMAC от нормализованного номера.
+     *
+     * Сам телефон хранится шифрованным, и каждый раз под новым IV — искать
+     * по нему нельзя. HMAC детерминирован, поэтому равенство по хэшу
+     * заменяет равенство по номеру, а без ключа приложения из хэша
+     * номер не восстановить.
+     */
+    public static function phoneHash(?string $phone): ?string
+    {
+        $digits = self::normalizePhone($phone);
+
+        if ($digits === null) {
+            return null;
+        }
+
+        return hash_hmac('sha256', $digits, (string) config('app.key'));
+    }
+
+    /**
+     * Поиск клиента для селектов CRM: по имени подстрокой, по телефону — хэшем.
+     *
+     * @return array<int,string>
+     */
+    public static function searchForSelect(string $term, int $limit = 50): array
+    {
+        $term = trim($term);
+
+        if ($term === '') {
+            return [];
+        }
+
+        $hash = self::phoneHash($term);
+
+        return static::query()
+            ->where(function ($query) use ($term, $hash) {
+                $query->where('name', 'ilike', '%'.$term.'%');
+
+                if ($hash !== null && mb_strlen(preg_replace('/\D+/u', '', $term) ?? '') >= 10) {
+                    $query->orWhere('phone_hash', $hash);
+                }
+            })
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->mapWithKeys(fn (Customer $customer) => [
+                $customer->id => $customer->name.' · '.телефонДляГлаз($customer->phone),
+            ])
+            ->all();
+    }
+
     /** Находит клиента по телефону или заводит нового. */
     public static function forPhone(string $phone, string $name): self
     {
         $normalized = self::normalizePhone($phone) ?? $phone;
+        $hash = self::phoneHash($normalized);
 
-        $customer = static::where('phone', $normalized)->first();
+        $customer = static::where('phone_hash', $hash)->first();
 
         if ($customer === null) {
             /*
@@ -204,17 +268,19 @@ class Customer extends Model
              * вернёт «current transaction is aborted», и вместо одного клиента
              * получится ошибка оформления.
              *
-             * insertOrIgnore до ошибки не доводит: конфликт по телефону просто
+             * insertOrIgnore до ошибки не доводит: конфликт по phone_hash просто
              * ничего не вставляет, и мы забираем ту карточку, которая победила.
+             * Касты здесь не работают — шифруем вручную.
              */
             static::insertOrIgnore([
-                'phone' => $normalized,
+                'phone' => Crypt::encryptString($normalized),
+                'phone_hash' => $hash,
                 'name' => $name,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $customer = static::where('phone', $normalized)->firstOrFail();
+            $customer = static::where('phone_hash', $hash)->firstOrFail();
         }
 
         // Имя обновляем, только если раньше его не знали: менеджер мог

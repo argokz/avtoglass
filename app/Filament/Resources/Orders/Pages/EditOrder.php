@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Orders\Pages;
 
+use App\Filament\Resources\Orders\Actions\OrderBriefAction;
 use App\Filament\Resources\Orders\OrderResource;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
@@ -13,6 +14,7 @@ class EditOrder extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            OrderBriefAction::make(),
             DeleteAction::make(),
         ];
     }

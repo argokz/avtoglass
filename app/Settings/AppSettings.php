@@ -22,6 +22,12 @@ class AppSettings
 {
     public const CACHE_KEY = 'app_settings';
 
+    public const AI_SCHEMA_CACHE_KEY = 'ai:schema_ready:v4';
+
+    private ?bool $aiSchemaReady = null;
+
+    private ?array $storedValues = null;
+
     public function enabled(string $key): bool
     {
         return (bool) $this->get($key);
@@ -55,6 +61,7 @@ class AppSettings
         }
 
         Cache::forget(self::CACHE_KEY);
+        $this->storedValues = null;
     }
 
     /** Состояние формы админки: сохранённое поверх дефолтов. */
@@ -112,10 +119,44 @@ class AppSettings
         return $city !== '' ? $city : (string) config('company.legal_city');
     }
 
-    /** Чат на витрине: тумблер в CRM и хотя бы один ключ Gemini в .env. */
+    /** Чат доступен, когда настроен хотя бы один разрешённый выбранным режимом провайдер. */
     public function aiChatEnabled(): bool
     {
-        return $this->enabled('ai_assistant') && config('ai.keys') !== [];
+        $mode = (string) config('ai.mode', 'gemini_only');
+        $gemini = in_array($mode, ['gemini_only', 'local_then_gemini'], true)
+            && count(array_filter((array) config('ai.keys', []), fn ($key) => is_string($key) && trim($key) !== '')) > 0;
+        $local = in_array($mode, ['local_only', 'local_then_gemini'], true)
+            && trim((string) config('ai.litellm.endpoint', '')) !== ''
+            && trim((string) config('ai.litellm.key', '')) !== ''
+            && config('ai.litellm.model', 'qwen-chat') === 'qwen-chat';
+
+        return $this->enabled('ai_assistant') && ($gemini || $local) && $this->aiSchemaReady();
+    }
+
+    private function aiSchemaReady(): bool
+    {
+        if ($this->aiSchemaReady !== null) {
+            return $this->aiSchemaReady;
+        }
+
+        if (Cache::get(self::AI_SCHEMA_CACHE_KEY) === true) {
+            return $this->aiSchemaReady = true;
+        }
+
+        // Keep a partially deployed AI release off the storefront until both migrations finish.
+        foreach (['ai_conversations', 'ai_messages', 'ai_turns', 'ai_tool_results', 'ai_checkouts', 'assistant_sessions', 'assistant_memories', 'assistant_answers', 'purchase_workspaces', 'purchase_access_grants'] as $table) {
+            if (! Schema::hasTable($table)) {
+                return $this->aiSchemaReady = false;
+            }
+        }
+
+        if (! Schema::hasColumn('ai_conversations', 'title')) {
+            return $this->aiSchemaReady = false;
+        }
+
+        Cache::forever(self::AI_SCHEMA_CACHE_KEY, true);
+
+        return $this->aiSchemaReady = true;
     }
 
     public function whatsapp(): ?string
@@ -213,6 +254,7 @@ class AppSettings
 
         return [
             'payments' => true,
+            'delivery_policies' => [],
             'booking' => true,
             'vin_lookup' => true,
             'whatsapp' => true,
@@ -318,7 +360,7 @@ TEXT;
     private function stored(): array
     {
         try {
-            return Cache::remember(self::CACHE_KEY, now()->addHour(), function () {
+            return $this->storedValues ??= Cache::remember(self::CACHE_KEY, now()->addHour(), function () {
                 if (! Schema::hasTable('settings')) {
                     return [];
                 }

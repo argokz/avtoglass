@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Catalog\StockLedger;
+use App\Domain\Risk\RiskLevel;
+use App\Domain\Shared\PurchaseException;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
@@ -20,13 +22,20 @@ class Order extends Model
 
     protected $guarded = [];
 
+    protected $hidden = ['purchase_guest_owner_hash', 'purchase_snapshot'];
+
     protected function casts(): array
     {
         return [
             'status' => OrderStatus::class,
             'source' => OrderSource::class,
+            'risk_status' => RiskLevel::class,
+            'risk_reasons' => 'array',
             'fulfillment' => FulfillmentType::class,
             'payment_method' => PaymentMethod::class,
+            'purchase_snapshot' => 'encrypted:array',
+            // Адрес — персональные данные: в базе лежит шифротекстом.
+            'address' => 'encrypted',
             'total_amount' => 'decimal:2',
             'scheduled_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -106,6 +115,20 @@ class Order extends Model
      */
     protected static function booted(): void
     {
+        static::updating(function (self $order): void {
+            if (! $order->purchase_draft_id) {
+                return;
+            }
+            if (in_array($order->getRawOriginal('purchase_state'), ['confirmed', 'paid', 'paid_review'], true)
+                && $order->isDirty(['total_amount', 'customer_id', 'fulfillment', 'address', 'city', 'payment_method'])) {
+                throw new PurchaseException('ACCEPTED_TERMS_IMMUTABLE', 409);
+            }
+            if ($order->isDirty('status') && in_array($order->status, [OrderStatus::Confirmed, OrderStatus::Scheduled, OrderStatus::Completed], true)
+                && (! in_array($order->purchase_state, ['confirmed', 'paid'], true)
+                    || $order->getRawOriginal('purchase_state') === 'review_required' && ! $order->isDirty('purchase_draft_id'))) {
+                throw new PurchaseException('CUSTOMER_ACCEPTANCE_REQUIRED', 409);
+            }
+        });
         static::creating(function (self $order) {
             $order->public_token ??= (string) Str::uuid();
         });
@@ -150,6 +173,10 @@ class Order extends Model
      */
     public function transitionTo(OrderStatus $target): bool
     {
+        if ($this->purchase_draft_id && in_array($target, [OrderStatus::Confirmed, OrderStatus::Scheduled, OrderStatus::Completed], true)
+            && ! in_array($this->purchase_state, ['confirmed', 'paid'], true)) {
+            return false;
+        }
         if (! $this->status->canTransitionTo($target)) {
             return false;
         }
@@ -185,6 +212,9 @@ class Order extends Model
      */
     private function syncStock(OrderStatus $target): void
     {
+        if ($this->purchase_draft_id && in_array($target, [OrderStatus::Confirmed, OrderStatus::Scheduled], true)) {
+            return; // SubmitDraft owns the all-or-nothing reserve for this order.
+        }
         $ledger = app(StockLedger::class);
 
         match ($target) {
@@ -213,9 +243,10 @@ class Order extends Model
         $this->forceFill(['total_amount' => $total ?: null])->save();
     }
 
-    public function wantsCardPayment(): bool
+    /** Заказ с онлайн-оплатой сразу после оформления (карта, Kaspi). */
+    public function wantsOnlinePayment(): bool
     {
-        return $this->payment_method === PaymentMethod::Card;
+        return $this->payment_method?->driver() !== null;
     }
 
     /**

@@ -93,6 +93,14 @@
         </a>
         @endif
 
+        <a href="{{ route('catalog.products', array_merge([$brand, $model], $filter->toQuery([
+               'kz' => $filter->kzOnly ? null : 1,
+           ]))) }}"
+           wire:click.prevent="toggleKz"
+           class="chip {{ $filter->kzOnly ? 'chip-active !border-brand !bg-brand !text-on-brand' : '' }}">
+            Сделано в Казахстане
+        </a>
+
         @foreach ($types as $type => $count)
             @php($enum = App\Enums\GlassType::tryFrom($type))
             @continue(! $enum)
@@ -148,8 +156,18 @@
     </div>
 @endif
 
+@if ($filter->type !== null || $filter->year !== null || $filter->inStockOnly || $filter->kzOnly || $filter->supplierId > 0 || $filter->options !== [])
+    <div class="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-sunken px-4 py-2.5 text-xs">
+        <span class="font-medium text-muted">Применены фильтры подбора</span>
+        <button type="button" wire:click="resetFilters"
+                class="font-bold text-brand-ink underline-offset-4 transition hover:underline">
+            Сбросить все фильтры ×
+        </button>
+    </div>
+@endif
+
 {{-- Skeleton при загрузке --}}
-<div wire:loading.flex wire:target="year,sort,type,inStock,supplierId,selectType,toggleStock,toggleOption,resetFilters,camera,rain_sensor,sun_band,heated_wipers,heated_full,gotoPage,nextPage,previousPage"
+<div wire:loading.flex wire:target="year,sort,type,inStock,kz,supplierId,toggleKz,selectType,toggleStock,toggleOption,resetFilters,camera,rain_sensor,sun_band,heated_wipers,heated_full,gotoPage,nextPage,previousPage"
      class="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
     @for ($i = 0; $i < 8; $i++)
         <div class="card overflow-hidden !p-0">
@@ -163,7 +181,7 @@
     @endfor
 </div>
 
-<div wire:loading.remove wire:target="year,sort,type,inStock,supplierId,selectType,toggleStock,toggleOption,resetFilters,camera,rain_sensor,sun_band,heated_wipers,heated_full,gotoPage,nextPage,previousPage">
+<div wire:loading.remove wire:target="year,sort,type,inStock,kz,supplierId,toggleKz,selectType,toggleStock,toggleOption,resetFilters,camera,rain_sensor,sun_band,heated_wipers,heated_full,gotoPage,nextPage,previousPage">
 
 @if ($products->isEmpty())
     <div class="card mt-8 px-6 py-14 text-center">

@@ -16,6 +16,7 @@ use App\Payments\CallbackResult;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery;
@@ -240,14 +241,16 @@ class PaymentReliabilityTest extends TestCase
         $raced = false;
 
         DB::listen(function ($query) use (&$raced, $phone, $name) {
-            if ($raced || ! str_contains($query->sql, 'from "customers" where "phone"')) {
+            if ($raced || ! str_contains($query->sql, 'phone_hash')) {
                 return;
             }
 
             $raced = true;
 
+            // Параллельный запрос пишет так же, как forPhone: шифротекст + хэш.
             DB::table('customers')->insert([
-                'phone' => $phone,
+                'phone' => Crypt::encryptString($phone),
+                'phone_hash' => Customer::phoneHash($phone),
                 'name' => $name,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -262,7 +265,7 @@ class PaymentReliabilityTest extends TestCase
         $customer = Customer::forPhone('+7 701 555 00 02', 'Наш');
 
         $this->assertSame('Создан параллельным запросом', $customer->name);
-        $this->assertSame(1, Customer::where('phone', '77015550002')->count());
+        $this->assertSame(1, Customer::where('phone_hash', Customer::phoneHash('77015550002'))->count());
     }
 
     /**
@@ -282,6 +285,6 @@ class PaymentReliabilityTest extends TestCase
         });
 
         $this->assertNotNull($order->number);
-        $this->assertSame(1, Customer::where('phone', '77015550003')->count());
+        $this->assertSame(1, Customer::where('phone_hash', Customer::phoneHash('77015550003'))->count());
     }
 }

@@ -10,6 +10,7 @@ use App\Enums\GlassType;
 use App\Models\CarBrand;
 use App\Models\CarModel;
 use App\Models\Product;
+use App\Support\StorefrontCache;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -58,6 +59,10 @@ class CatalogFilters extends Component
     #[Url(as: 'in_stock', except: false)]
     public bool $inStock = false;
 
+    /** Только отечественный товар: приоритет «Сделано в Казахстане». */
+    #[Url(except: false)]
+    public bool $kz = false;
+
     #[Url(except: 'price_asc')]
     public string $sort = 'price_asc';
 
@@ -100,6 +105,7 @@ class CatalogFilters extends Component
         $this->type = '';
         $this->year = '';
         $this->inStock = false;
+        $this->kz = false;
         $this->supplierId = 0;
         $this->camera = false;
         $this->rain_sensor = false;
@@ -112,6 +118,12 @@ class CatalogFilters extends Component
     public function toggleStock(): void
     {
         $this->inStock = ! $this->inStock;
+        $this->resetPage();
+    }
+
+    public function toggleKz(): void
+    {
+        $this->kz = ! $this->kz;
         $this->resetPage();
     }
 
@@ -143,6 +155,7 @@ class CatalogFilters extends Component
             sort: ProductSort::tryFrom($this->sort) ?? ProductSort::PriceAsc,
             inStockOnly: $this->inStock,
             supplierId: $this->supplierId ?: null,
+            kzOnly: $this->kz,
         );
     }
 
@@ -165,14 +178,33 @@ class CatalogFilters extends Component
         $filter = $this->filter();
         $products = app(ProductQuery::class);
         $years = app(ModelYears::class);
+        $cache = app(StorefrontCache::class);
+        $facets = $cache->remember(
+            'facets:'.$filter->facetCacheKey(),
+            function () use ($products, $filter) {
+                return [
+                    'types' => $products->countsByType($filter)->all(),
+                    'suppliers' => $products->countsBySupplier($filter)->map(fn ($row) => [
+                        'id' => (int) $row->id,
+                        'name' => $row->name,
+                        'tier' => $row->tier,
+                        'total' => (int) $row->total,
+                    ])->values()->all(),
+                    'optionCounts' => $products->countsByOption($filter)->all(),
+                ];
+            },
+        );
 
         return view('livewire.catalog-filters', [
             'filter' => $filter,
             'products' => $products->paginate($filter),
-            'types' => $products->countsByType($filter),
-            'suppliers' => $products->countsBySupplier($filter),
-            'optionCounts' => $products->countsByOption($filter),
-            'years' => $years->for($this->model),
+            'types' => collect($facets['types']),
+            'suppliers' => collect($facets['suppliers'])->map(fn (array $row) => (object) $row),
+            'optionCounts' => collect($facets['optionCounts']),
+            'years' => $cache->remember(
+                'years:'.$this->model->getKey(),
+                fn () => $years->for($this->model),
+            ),
             'generation' => $years->generationFor($this->model, $filter->year),
         ]);
     }

@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Ai\Runtime\ChatIdentity;
+use App\Ai\Runtime\ChatStore;
+use App\Ai\Runtime\MessageText;
 use App\Cart\Cart;
-use App\Livewire\AiChat;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class StorefrontModeTest extends TestCase
@@ -18,19 +21,24 @@ class StorefrontModeTest extends TestCase
         config(['ai.keys' => ['test-key']]);
         $product = Product::factory()->create();
         app(Cart::class)->add($product, 2);
-        $messages = [['role' => 'user', 'text' => 'Нужно стекло на Camry 2018']];
+        $token = ChatIdentity::guestToken();
+        $store = app(ChatStore::class);
+        $conversation = $store->conversation(ChatIdentity::buyer());
+        $turn = $store->enqueue($conversation, 'Нужно стекло на Camry 2018');
 
-        $this->withSession([AiChat::SESSION_KEY => $messages])
-            ->post(route('storefront.mode'), ['mode' => 'chat'])
+        $this->post(route('storefront.mode'), ['mode' => 'chat'])
             ->assertRedirect(route('assistant'))
             ->assertCookie('storefront_mode', 'chat')
-            ->assertSessionHas(AiChat::SESSION_KEY, $messages);
+            ->assertSessionHas('ordering.guest_token', $token);
+        $this->assertSame($conversation->id, $store->conversation(ChatIdentity::buyer())->id);
+        $this->assertSame('Нужно стекло на Camry 2018', MessageText::decode((string) DB::table('ai_messages')->where('conversation_id', $conversation->id)->where('role', 'user')->value('text')));
         $this->assertSame(2, app(Cart::class)->count());
 
         $this->post(route('storefront.mode'), ['mode' => 'store'])
             ->assertRedirect(route('home'))
             ->assertCookie('storefront_mode', 'store')
-            ->assertSessionHas(AiChat::SESSION_KEY, $messages);
+            ->assertSessionHas('ordering.guest_token', $token);
+        $this->assertSame($turn, $conversation->fresh()->active_turn_id);
         $this->assertSame(2, app(Cart::class)->count());
     }
 

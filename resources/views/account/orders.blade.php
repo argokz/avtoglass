@@ -9,8 +9,8 @@
 
 @section('content')
 
-<div class="mx-auto max-w-lg py-6">
-    <div class="flex items-start justify-between gap-4">
+<div class="account-workspace mx-auto max-w-4xl py-6">
+    <div class="page-heading flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <h1 class="text-2xl font-extrabold sm:text-3xl">Мои заявки</h1>
             <p class="mt-1 truncate text-sm text-muted">{{ $user->name }} · {{ телефонДляГлаз($user->phone) }}</p>
@@ -67,10 +67,10 @@
             </a>
         </div>
     @else
-        <ul class="mt-6 space-y-3">
+        <ul class="mt-6 grid gap-4 md:grid-cols-2">
             @foreach ($orders as $order)
                 <li>
-                    <a href="{{ route('order.track', $order) }}"
+                    <a href="{{ $order->purchase_draft_id ? route('purchase.show', $order->public_token) : route('order.track', $order) }}"
                        class="card card-hover block p-4">
                         <div class="flex items-baseline justify-between gap-3">
                             <span class="font-display font-extrabold">{{ $order->number }}</span>
@@ -93,29 +93,54 @@
                         <div class="mt-2 flex items-baseline justify-between gap-3">
                             @if ($order->total_amount)
                                 <span class="price text-lg">
-                                    {{ number_format((float) $order->total_amount, 0, ',', ' ') }} ₸
+                                    {{ formatPrice((float) $order->total_amount) }} ₸
                                 </span>
                             @else
                                 <span></span>
                             @endif
                             @if ($paid = $order->paidAmount())
                                 <span class="badge badge-ok">
-                                    оплачено {{ number_format($paid, 0, ',', ' ') }} ₸
+                                    оплачено {{ formatPrice($paid) }} ₸
                                 </span>
                             @endif
                         </div>
                     </a>
-                    @if ($order->source === \App\Enums\OrderSource::Wholesale && $user->customer?->seesWholesalePrices())
-                        <div class="mt-1.5 text-right">
-                            <a href="{{ route('wholesale.index', ['repeat' => $order->id]) }}"
-                               class="text-xs font-bold text-brand-ink underline-offset-4 hover:underline">
-                                Повторить заявку
-                            </a>
-                        </div>
-                    @endif
+                    @php $можно = $actions[$order->id] ?? []; @endphp
+                    <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+                        @if ($можно['pay'] ?? false)
+                            <form method="post" action="{{ route('purchase.pay', $order->public_token) }}">
+                                @csrf
+                                <button type="submit" class="btn btn-primary btn-sm">Оплатить {{ formatPrice($order->outstanding()) }} ₸</button>
+                            </form>
+                        @endif
+                        @if ($order->source === \App\Enums\OrderSource::Wholesale && $user->customer?->seesWholesalePrices())
+                            <a href="{{ route('wholesale.index', ['repeat' => $order->id]) }}" class="btn btn-outline btn-sm">Повторить заявку</a>
+                        @elseif ($можно['reorder'] ?? false)
+                            <form method="post" action="{{ route('account.order.reorder', $order->public_token) }}">
+                                @csrf
+                                <button type="submit" class="btn btn-outline btn-sm">Заказать снова</button>
+                            </form>
+                        @endif
+                        @if ($можно['cancel'] ?? false)
+                            <details class="w-full text-right sm:w-auto">
+                                <summary class="btn btn-ghost btn-sm cursor-pointer list-none">Отменить</summary>
+                                <form method="post" action="{{ route('account.order.cancel', $order->public_token) }}"
+                                      class="card mt-2 space-y-2 p-3 text-left">
+                                    @csrf
+                                    <label class="block text-xs font-bold text-muted" for="reason-{{ $order->id }}">Причина — необязательно</label>
+                                    <input id="reason-{{ $order->id }}" name="reason" maxlength="500" class="input !py-2 !text-sm"
+                                           placeholder="Нашёл дешевле, передумал…">
+                                    <button type="submit" class="btn btn-primary btn-sm w-full">Да, отменить {{ $order->number }}</button>
+                                </form>
+                            </details>
+                        @endif
+                    </div>
                 </li>
             @endforeach
         </ul>
+    @endif
+    @if ($orders->hasPages())
+        <div class="mt-6">{{ $orders->links('pagination') }}</div>
     @endif
 </div>
 

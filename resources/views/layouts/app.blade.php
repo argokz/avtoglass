@@ -14,27 +14,19 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="{{ url()->current() }}">
     <meta property="og:locale" content="ru_KZ">
+    {{-- Канонический адрес без query: фильтры и пагинация не должны плодить дубли в выдаче --}}
+    <link rel="canonical" href="@yield('canonical', url()->current())">
     @hasSection('og_image')
         <meta property="og:image" content="@yield('og_image')">
     @endif
 
-    <script type="application/ld+json">
-    {
-        "@@context": "https://schema.org",
-        "@@type": "AutoRepair",
-        "name": "{{ settings()->brandName() }}",
-        "description": "Продажа и профессиональная установка автостёкол в Казахстане",
-        "url": "{{ url('/') }}",
-        "telephone": "{{ settings()->phones()[0]['display'] ?? '' }}",
-        "address": {
-            "@@type": "PostalAddress",
-            "streetAddress": "{{ settings()->address() }}",
-            "addressCountry": "KZ"
-        },
-        "priceRange": "₸₸",
-        "openingHours": "{{ settings()->hours() }}"
-    }
-    </script>
+    <script type="application/ld+json">{!! \Illuminate\Support\Js::encode([
+        '@context' => 'https://schema.org', '@type' => 'AutoRepair',
+        'name' => settings()->brandName(), 'description' => 'Продажа и установка автостёкол в Казахстане',
+        'url' => url('/'), 'telephone' => settings()->phones()[0]['display'] ?? '',
+        'address' => ['@type' => 'PostalAddress', 'streetAddress' => settings()->address(), 'addressCountry' => 'KZ'],
+        'priceRange' => '₸₸', 'openingHours' => settings()->hours(),
+    ]) !!}</script>
     @stack('jsonld')
 
     <link rel="manifest" href="{{ asset('manifest.json') }}">
@@ -57,7 +49,7 @@
     @include('partials.theme-init')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="flex min-h-full flex-col @yield('body_class')">
+<body class="storefront flex min-h-full flex-col @yield('body_class')">
 
 @php
     $isCustomer = auth()->check() && ! auth()->user()->isStaff();
@@ -182,6 +174,15 @@
         </div>
     </div>
 </footer>
+
+{{-- Нижняя навигация на телефоне. На страницах со своей панелью (товар, корзина) не выводится. --}}
+@unless (str_contains((string) $__env->yieldContent('body_class'), 'has-mobile-cta') || $чатГлавная)
+    @include('partials.mobile-tabbar')
+@endunless
+
+@if (settings()->enabled('cart'))
+    <x-quick-order-modal />
+@endif
 
 {{-- Toast-уведомления --}}
 <div id="toast-root" class="toast-container" aria-live="polite" aria-atomic="true"

@@ -60,7 +60,9 @@ class SupplierForm
                     ->label('Срок поставки, дней')
                     ->required()
                     ->numeric()
-                    ->default(0),
+                    ->minValue(0)
+                    ->default(0)
+                    ->helperText('Сколько дней везут стекло под заказ. Покупатель видит «под заказ · 3 дн., ориентировочно к …». Ноль — срок не задан: витрина пишет «срок назовёт менеджер».'),
 
                 TextInput::make('markup_percent')
                     ->label('Наценка, %')
