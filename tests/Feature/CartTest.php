@@ -9,7 +9,9 @@ use App\Models\Fitment;
 use App\Models\Offer;
 use App\Models\Order;
 use App\Models\Product;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -363,6 +365,35 @@ class CartTest extends TestCase
 
         $this->assertSame(1, Order::count());
         $this->assertSame(1, Order::sole()->tasks()->count());
+    }
+
+    /**
+     * Два одновременных POST: оба не нашли токен до транзакции, второй упёрся
+     * в уникальный индекс. Покупатель получает тот же заказ, а не 500.
+     */
+    public function test_одновременный_checkout_с_тем_же_токеном_отдаёт_первый_заказ(): void
+    {
+        $this->post(route('cart.add', $this->product()));
+
+        // Соседний запрос коммитит заказ ровно между поиском токена и вставкой.
+        $raced = false;
+        $first = null;
+        DB::listen(function (QueryExecuted $query) use (&$raced, &$first) {
+            if ($raced || ! str_starts_with($query->sql, 'select') || ! str_contains($query->sql, '"form_token" = ?')) {
+                return;
+            }
+
+            $raced = true;
+            $first = Order::factory()->create(['form_token' => 'tok-race']);
+        });
+
+        $this->post(route('cart.checkout'), $this->orderPayload(['form_token' => 'tok-race']))
+            ->assertRedirect(route('order.thanks'))
+            ->assertSessionHas('order_deduped', true);
+
+        $this->assertTrue($raced);
+        $this->assertSame([$first->id], Order::query()->pluck('id')->all());
+        $this->assertSame(0, $first->tasks()->count(), 'проигравший запрос не ставит вторую задачу');
     }
 
     public function test_в_заказ_попадает_выбранный_поставщик(): void

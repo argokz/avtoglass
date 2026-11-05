@@ -19,6 +19,8 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Task;
 use App\Models\User;
+use Closure;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -54,7 +56,7 @@ class CreateOrder
             }
         }
 
-        return DB::transaction(function () use ($data, $source, $product) {
+        $create = function () use ($data, $source, $product) {
             $customer = Customer::forPhone($data['phone'], $data['name']);
 
             $order = Order::create([
@@ -86,7 +88,11 @@ class CreateOrder
             $this->assessAndFollowUp($order);
 
             return $order;
-        });
+        };
+
+        return $source === OrderSource::Booking
+            ? DB::transaction($create)
+            : $this->createOnce($data, $create);
     }
 
     /**
@@ -156,7 +162,7 @@ class CreateOrder
             return $this->replay($existing);
         }
 
-        return DB::transaction(function () use ($data, $cart) {
+        return $this->createOnce($data, function () use ($data, $cart) {
             $customer = Customer::forPhone($data['phone'], $data['name']);
 
             $order = Order::create([
@@ -214,7 +220,7 @@ class CreateOrder
             return $this->replay($existing);
         }
 
-        return DB::transaction(function () use ($customer, $positions, $data) {
+        return $this->createOnce($data, function () use ($customer, $positions, $data) {
             $order = Order::create([
                 'customer_id' => $customer->id,
                 'status' => OrderStatus::New,
@@ -290,6 +296,29 @@ class CreateOrder
         session()->flash('order_deduped', true);
 
         return $order;
+    }
+
+    /**
+     * Два одновременных POST одной формы оба не находят токен и оба идут
+     * в транзакцию; второй упирается в уникальный индекс form_token. Его
+     * транзакция откатывается целиком — ни клиента, ни задачи, ни оповещения, —
+     * а покупатель получает тот же заказ, что и первый запрос, вместо 500.
+     *
+     * @param  Closure(): Order  $create
+     */
+    private function createOnce(array $data, Closure $create): Order
+    {
+        try {
+            return DB::transaction($create);
+        } catch (UniqueConstraintViolationException $e) {
+            $existing = $this->findByFormToken($data['form_token'] ?? null);
+
+            if ($existing === null) {
+                throw $e;
+            }
+
+            return $this->replay($existing);
+        }
     }
 
     private function findByFormToken(?string $token): ?Order
